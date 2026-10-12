@@ -18,11 +18,11 @@ It only gives advice. It never clicks, moves items, withdraws, equips, walks or 
 
 ## 1. Quick start (5 minutes, free, no API key)
 
-Requirements: **JDK 11 or newer** (tested with 21). Nothing else; Gradle downloads RuneLite.
+Requirements: **JDK 11 or newer** (tested with 21). On Windows install [Temurin JDK 21](https://adoptium.net) and tick "Set JAVA_HOME". Nothing else; Gradle downloads RuneLite.
 
 ```bash
 cd osrs-coach
-./gradlew run          # Windows: gradlew.bat run
+./gradlew run          # Windows PowerShell: .\gradlew.bat run
 ```
 
 This opens RuneLite in developer mode with the plugin loaded. Click the gold-ring **OSRS Coach** icon in the sidebar.

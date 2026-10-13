@@ -14,28 +14,12 @@ import java.net.UnknownHostException;
 import java.time.Clock;
 import java.time.ZoneOffset;
 import java.util.Collections;
-import org.junit.jupiter.api.AfterEach;
-import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 
 class ProvidersTest
 {
 	private static final Gson GSON = new Gson();
 	private static final String KEY = "sk-ant-TEST-SECRET-123";
-	private HttpJson.Sleeper original;
-
-	@BeforeEach
-	void noRealSleeps()
-	{
-		original = HttpJson.sleeper;
-		HttpJson.sleeper = ms -> { };
-	}
-
-	@AfterEach
-	void restoreSleeper()
-	{
-		HttpJson.sleeper = original;
-	}
 
 	private static CoachRequest req()
 	{
@@ -228,14 +212,14 @@ class ProvidersTest
 	}
 
 	@Test
-	void transientServerErrorIsRetried() throws Exception
+	void transientServerErrorCarriesRetryHint()
 	{
-		FakeHttp ai = new FakeHttp().respond(503, "{\"error\":{\"message\":\"overloaded\"}}")
-			.respond(200, "{\"choices\":[{\"message\":{\"content\":\"ok\"}}]}");
-		java.util.List<String> progress = new java.util.ArrayList<>();
-		CoachRequest r = req().toBuilder().progress(progress::add).build();
-		assertEquals("ok", new OpenAiCompatibleProvider(ai.client(), GSON, "k", "https://x.test/v1").respond(r, new CoachTools(null)).getText());
-		assertTrue(progress.get(0).startsWith("AI service busy"), progress.toString());
+		FakeHttp ai = new FakeHttp().respond(503, "{\"error\":{\"message\":\"overloaded\"}}");
+		CoachException e = org.junit.jupiter.api.Assertions.assertThrows(CoachException.class,
+			() -> new OpenAiCompatibleProvider(ai.client(), GSON, "k", "https://x.test/v1").respond(req(), new CoachTools(null)));
+		assertTrue(e.isServerBusy());
+		assertEquals(3.0, e.getRetryAfterSeconds(), 0.001);
+		assertEquals(1, ai.requests.size(), "provider never waits or retries by itself");
 	}
 
 	@Test

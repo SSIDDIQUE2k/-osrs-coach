@@ -12,41 +12,52 @@ import com.osrscoach.MockData;
 import com.osrscoach.research.WikiClient;
 import java.time.Clock;
 import java.time.ZoneOffset;
-import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
+import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.CopyOnWriteArrayList;
+import java.util.concurrent.ExecutionException;
+import java.util.concurrent.Executors;
+import java.util.concurrent.ScheduledExecutorService;
+import java.util.concurrent.TimeUnit;
 import org.junit.jupiter.api.AfterEach;
-import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 
 class RateLimitTest
 {
 	private static final Gson GSON = new Gson();
 	private static final String GROQ_429 = "{\"error\":{\"message\":\"Rate limit reached for model `openai/gpt-oss-120b` on tokens per minute (TPM): Limit 8000, Used 6975, Requested 7514. Please try again in 48.6675s. Need more tokens?\",\"type\":\"tokens\"}}";
-	private final List<Long> slept = new ArrayList<>();
-	private HttpJson.Sleeper original;
-
-	@BeforeEach
-	void stubSleep()
-	{
-		original = HttpJson.sleeper;
-		HttpJson.sleeper = slept::add;
-	}
+	private final ScheduledExecutorService exec = Executors.newSingleThreadScheduledExecutor();
 
 	@AfterEach
-	void restore()
+	void stop()
 	{
-		HttpJson.sleeper = original;
+		exec.shutdownNow();
 	}
 
-	private static CoachRequest req(List<String> progress)
+	private static CoachConfig groq()
 	{
-		return CoachRequest.builder().systemPrompt("s").history(Collections.emptyList()).userMessage("q")
-			.model("openai/gpt-oss-120b").maxTokens(300).progress(progress::add).build();
+		return new CoachConfig()
+		{
+			@Override public Provider provider() { return Provider.OPENAI_COMPATIBLE; }
+			@Override public String apiKey() { return "gsk"; }
+			@Override public String model() { return "openai/gpt-oss-120b"; }
+			@Override public String baseUrl() { return "https://api.groq.com/openai/v1"; }
+			@Override public boolean wikiLookups() { return false; }
+		};
+	}
+
+	private CoachService service(FakeHttp ai)
+	{
+		WikiClient w = new WikiClient(new FakeHttp().client(), GSON, Clock.fixed(MockData.NOW, ZoneOffset.UTC), WikiClient.WIKI, WikiClient.PRICES);
+		CoachService s = new CoachService(() -> CompletableFuture.completedFuture(MockData.beginner()), RateLimitTest::groq, () -> null,
+			ai.client(), GSON, w, exec, Clock.fixed(MockData.NOW, ZoneOffset.UTC));
+		s.retryUnit = TimeUnit.MILLISECONDS;
+		return s;
 	}
 
 	@Test
-	void parsesGroqAndHeaderWaits()
+	void parsesGroqGeminiAndHeaderWaits()
 	{
 		assertEquals(48.6675, HttpJson.retryAfterSeconds(null, GROQ_429), 0.001);
 		assertEquals(72.5, HttpJson.retryAfterSeconds(null, "please try again in 1m12.5s"), 0.001);
@@ -57,40 +68,43 @@ class RateLimitTest
 	}
 
 	@Test
-	void waitsThenSucceeds() throws Exception
+	void rateLimitIsRetriedBySchedulingNotSleeping() throws Exception
 	{
 		FakeHttp ai = new FakeHttp().respond(429, GROQ_429).respond(200, "{\"choices\":[{\"message\":{\"content\":\"done\"}}]}");
-		List<String> progress = new ArrayList<>();
-		CoachReply r = new OpenAiCompatibleProvider(ai.client(), GSON, "gsk", "https://api.groq.com/openai/v1").respond(req(progress), new CoachTools(null));
+		List<String> progress = new CopyOnWriteArrayList<>();
+		CoachReply r = service(ai).ask("q", progress::add).get(5, TimeUnit.SECONDS);
 		assertEquals("done", r.getText());
-		assertEquals(Collections.singletonList(49_000L), slept);
 		assertTrue(progress.get(0).contains("waiting 49s"), progress.toString());
+		assertEquals("Thinking…", progress.get(1));
 	}
 
 	@Test
-	void givesUpWhenWaitTooLongOrRepeated()
+	void serverBusyIsRetried() throws Exception
+	{
+		FakeHttp ai = new FakeHttp().respond(503, "{\"error\":{\"message\":\"overloaded\"}}")
+			.respond(200, "{\"choices\":[{\"message\":{\"content\":\"ok\"}}]}");
+		List<String> progress = new CopyOnWriteArrayList<>();
+		assertEquals("ok", service(ai).ask("q", progress::add).get(5, TimeUnit.SECONDS).getText());
+		assertTrue(progress.get(0).startsWith("AI service busy"), progress.toString());
+	}
+
+	@Test
+	void givesUpWhenWaitTooLongOrRepeated() throws Exception
 	{
 		FakeHttp longWait = new FakeHttp().respond(429, "{\"error\":{\"message\":\"Please try again in 5m0s.\"}}");
-		CoachException e = assertThrows(CoachException.class,
-			() -> new OpenAiCompatibleProvider(longWait.client(), GSON, "k", "https://x.test/v1").respond(req(new ArrayList<>()), new CoachTools(null)));
-		assertEquals(CoachException.Kind.RATE_LIMITED, e.getKind());
-		assertTrue(slept.isEmpty());
+		ExecutionException e1 = assertThrows(ExecutionException.class, () -> service(longWait).ask("q", null).get(5, TimeUnit.SECONDS));
+		assertEquals(CoachException.Kind.RATE_LIMITED, ((CoachException) e1.getCause()).getKind());
+		assertEquals(1, longWait.requests.size());
 
-		FakeHttp always = new FakeHttp().respond(429, GROQ_429).respond(429, GROQ_429).respond(429, GROQ_429);
-		assertThrows(CoachException.class,
-			() -> new OpenAiCompatibleProvider(always.client(), GSON, "k", "https://x.test/v1").respond(req(new ArrayList<>()), new CoachTools(null)));
-		assertEquals(HttpJson.MAX_RATE_RETRIES, slept.size());
+		FakeHttp always = new FakeHttp().respond(429, GROQ_429).respond(429, GROQ_429).respond(429, GROQ_429).respond(429, GROQ_429);
+		assertThrows(ExecutionException.class, () -> service(always).ask("q", null).get(5, TimeUnit.SECONDS));
+		assertEquals(CoachService.MAX_RETRIES + 1, always.requests.size());
 	}
 
 	@Test
 	void groqIsCompactAutomatically()
 	{
-		CoachConfig groq = new CoachConfig()
-		{
-			@Override public Provider provider() { return Provider.OPENAI_COMPATIBLE; }
-			@Override public String baseUrl() { return "https://api.groq.com/openai/v1"; }
-		};
-		assertTrue(CoachService.compact(groq));
+		assertTrue(CoachService.compact(groq()));
 		assertFalse(CoachService.compact(MockData.config(CoachConfig.Provider.ANTHROPIC, "k", true)));
 	}
 

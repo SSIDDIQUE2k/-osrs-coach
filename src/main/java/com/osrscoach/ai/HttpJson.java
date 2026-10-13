@@ -7,7 +7,6 @@ import com.google.gson.JsonSyntaxException;
 import java.io.IOException;
 import java.io.InterruptedIOException;
 import java.util.Map;
-import java.util.function.Consumer;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 import okhttp3.MediaType;
@@ -22,87 +21,18 @@ final class HttpJson
 {
 	private static final MediaType JSON = MediaType.parse("application/json; charset=utf-8");
 	private static final int MAX_ERROR_DETAIL = 300;
-	static final int MAX_WAIT_SECONDS = 65;
-	static final int MAX_RATE_RETRIES = 2;
 	// Groq: "try again in 48.6s" / "1m12.5s"; Gemini: "Please retry in 41.5s" or "retryDelay": "41s".
 	private static final Pattern TRY_AGAIN = Pattern.compile("(?i)(?:try again|retry) in\\s*(?:(\\d+)m)?\\s*([0-9.]+)\\s*s");
 	private static final Pattern RETRY_DELAY = Pattern.compile("\"retryDelay\"\\s*:\\s*\"([0-9.]+)s\"");
-	/** Swappable for tests. */
-	static Sleeper sleeper = ms -> Thread.sleep(ms);
 
-	interface Sleeper
-	{
-		void sleep(long ms) throws InterruptedException;
-	}
-
+	/**
+	 * Single request, no waiting. Rate limits (429) and transient server errors (5xx) come back as a retryable
+	 * {@link CoachException} carrying the server's suggested delay; {@link CoachService} schedules any retry.
+	 */
 	static JsonObject post(OkHttpClient http, Gson gson, String url, Map<String, String> headers, JsonObject body, String providerName)
 		throws CoachException
 	{
-		return post(http, gson, url, headers, body, providerName, null);
-	}
-
-	/**
-	 * Like {@link #postOnce}, but when the provider says "rate limited, try again in N seconds" (N up to about a minute),
-	 * waits and retries instead of failing. Free tiers (e.g. Groq) need this for multi-step answers.
-	 */
-	static JsonObject post(OkHttpClient http, Gson gson, String url, Map<String, String> headers, JsonObject body, String providerName,
-		Consumer<String> progress) throws CoachException
-	{
-		for (int attempt = 0; ; attempt++)
-		{
-			try
-			{
-				return postOnce(http, gson, url, headers, body, providerName);
-			}
-			catch (RateLimited rl)
-			{
-				if (attempt >= MAX_RATE_RETRIES || rl.waitSeconds < 0 || rl.waitSeconds > MAX_WAIT_SECONDS)
-				{
-					throw rl.error;
-				}
-				long secs = Math.max(1, (long) Math.ceil(rl.waitSeconds));
-				if (progress != null)
-				{
-					progress.accept(rl.serverBusy
-						? "AI service busy — retrying in " + secs + "s…"
-						: "Free-tier limit reached — waiting " + secs + "s, then continuing…");
-				}
-				try
-				{
-					sleeper.sleep(secs * 1000L);
-				}
-				catch (InterruptedException e)
-				{
-					Thread.currentThread().interrupt();
-					throw rl.error;
-				}
-				if (progress != null)
-				{
-					progress.accept("Thinking…");
-				}
-			}
-		}
-	}
-
-	/** Internal: a 429 with an optional server-suggested wait. */
-	static final class RateLimited extends Exception
-	{
-		final double waitSeconds;
-		final CoachException error;
-		final boolean serverBusy;
-
-		RateLimited(double waitSeconds, CoachException error)
-		{
-			this(waitSeconds, error, false);
-		}
-
-		RateLimited(double waitSeconds, CoachException error, boolean serverBusy)
-		{
-			super(null, null, false, false);
-			this.waitSeconds = waitSeconds;
-			this.error = error;
-			this.serverBusy = serverBusy;
-		}
+		return postOnce(http, gson, url, headers, body, providerName);
 	}
 
 	static double retryAfterSeconds(String header, String body)
@@ -140,7 +70,7 @@ final class HttpJson
 	}
 
 	static JsonObject postOnce(OkHttpClient http, Gson gson, String url, Map<String, String> headers, JsonObject body, String providerName)
-		throws CoachException, RateLimited
+		throws CoachException
 	{
 		Request.Builder rb = new Request.Builder().url(url).post(RequestBody.create(JSON, gson.toJson(body)));
 		for (Map.Entry<String, String> h : headers.entrySet())
@@ -165,12 +95,12 @@ final class HttpJson
 				CoachException ce = CoachException.fromStatus(res.code(), providerName, errorDetail(gson, text));
 				if (res.code() == 429)
 				{
-					throw new RateLimited(retryAfterSeconds(res.header("Retry-After"), text), ce);
+					throw ce.withRetryAfter(retryAfterSeconds(res.header("Retry-After"), text), false);
 				}
 				if (res.code() == 500 || res.code() == 502 || res.code() == 503 || res.code() == 504 || res.code() == 529)
 				{
 					double hinted = retryAfterSeconds(res.header("Retry-After"), null);
-					throw new RateLimited(hinted > 0 ? hinted : 3, ce, true);
+					throw ce.withRetryAfter(hinted > 0 ? hinted : 3, true);
 				}
 				throw ce;
 			}

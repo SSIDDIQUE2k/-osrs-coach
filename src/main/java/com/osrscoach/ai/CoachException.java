@@ -28,6 +28,19 @@ public class CoachException extends Exception
 	private final Kind kind;
 	@Getter
 	private final boolean retryable;
+	/** Server-suggested wait before retrying, in seconds; negative when none was given. */
+	@Getter
+	private double retryAfterSeconds = -1;
+	/** True for transient 5xx errors, false for rate limits. */
+	@Getter
+	private boolean serverBusy;
+
+	CoachException withRetryAfter(double seconds, boolean busy)
+	{
+		this.retryAfterSeconds = seconds;
+		this.serverBusy = busy;
+		return this;
+	}
 
 	public CoachException(Kind kind, String message, boolean retryable)
 	{

@@ -13,7 +13,7 @@ import java.time.Clock;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.concurrent.CompletableFuture;
-import java.util.concurrent.ExecutorService;
+import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.TimeUnit;
 import java.util.function.Supplier;
 import lombok.extern.slf4j.Slf4j;
@@ -32,7 +32,11 @@ public class CoachService
 	private final OkHttpClient http;
 	private final Gson gson;
 	private final WikiClient wiki;
-	private final ExecutorService executor;
+	private final ScheduledExecutorService executor;
+	static final int MAX_WAIT_SECONDS = 65;
+	static final int MAX_RETRIES = 2;
+	/** Unit for scheduled retry delays; tests shrink it. */
+	TimeUnit retryUnit = TimeUnit.SECONDS;
 	private final Clock clock;
 
 	private final List<ChatTurn> history = new ArrayList<>();
@@ -40,7 +44,7 @@ public class CoachService
 	private volatile AccountSnapshot lastSnapshot;
 
 	public CoachService(Supplier<CompletableFuture<AccountSnapshot>> snapshotSource, Supplier<CoachConfig> config,
-		Supplier<String> selectedQuest, OkHttpClient http, Gson gson, WikiClient wiki, ExecutorService executor, Clock clock)
+		Supplier<String> selectedQuest, OkHttpClient http, Gson gson, WikiClient wiki, ScheduledExecutorService executor, Clock clock)
 	{
 		this.snapshotSource = snapshotSource;
 		this.config = config;
@@ -62,20 +66,62 @@ public class CoachService
 		return ask(question, null);
 	}
 
-	/** @param progress optional status updates (called on the worker thread). */
+	/**
+	 * @param progress optional status updates (called on the worker thread).
+	 * Rate-limited or busy providers are retried by scheduling a new attempt on the executor after the
+	 * server-suggested delay; no thread ever sleeps.
+	 */
 	public CompletableFuture<CoachReply> ask(String question, java.util.function.Consumer<String> progress)
 	{
-		return CompletableFuture.supplyAsync(() ->
+		CompletableFuture<CoachReply> result = new CompletableFuture<>();
+		attempt(question, progress, 0, result);
+		return result;
+	}
+
+	private void attempt(String question, java.util.function.Consumer<String> progress, int attemptNo, CompletableFuture<CoachReply> result)
+	{
+		try
 		{
-			try
+			executor.execute(() ->
 			{
-				return askBlocking(question, progress);
-			}
-			catch (CoachException e)
-			{
-				throw new java.util.concurrent.CompletionException(e);
-			}
-		}, executor);
+				try
+				{
+					if (attemptNo > 0 && progress != null)
+					{
+						progress.accept("Thinking…");
+					}
+					result.complete(askBlocking(question, progress));
+				}
+				catch (CoachException e)
+				{
+					double wait = e.getRetryAfterSeconds();
+					if (e.isRetryable() && wait >= 0 && wait <= MAX_WAIT_SECONDS && attemptNo < MAX_RETRIES)
+					{
+						long secs = Math.max(1, (long) Math.ceil(wait));
+						if (progress != null)
+						{
+							progress.accept(e.isServerBusy()
+								? "AI service busy — retrying in " + secs + "s…"
+								: "Free-tier limit reached — waiting " + secs + "s, then continuing…");
+						}
+						executor.schedule(() -> attempt(question, progress, attemptNo + 1, result), secs, retryUnit);
+					}
+					else
+					{
+						result.completeExceptionally(e);
+					}
+				}
+				catch (RuntimeException e)
+				{
+					result.completeExceptionally(e);
+				}
+			});
+		}
+		catch (java.util.concurrent.RejectedExecutionException e)
+		{
+			// Plugin is shutting down.
+			result.completeExceptionally(e);
+		}
 	}
 
 	/** Re-reads account context on a worker thread. */

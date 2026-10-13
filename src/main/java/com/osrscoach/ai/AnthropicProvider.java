@@ -85,7 +85,7 @@ public class AnthropicProvider implements AiProvider
 				}
 			}
 
-			JsonObject res = HttpJson.post(http, gson, url, headers, body, "Anthropic", req.getProgress());
+			JsonObject res = HttpJson.post(http, gson, url, headers, body, "Anthropic");
 			JsonArray content = res.has("content") && res.get("content").isJsonArray() ? res.getAsJsonArray("content") : null;
 			if (content == null)
 			{

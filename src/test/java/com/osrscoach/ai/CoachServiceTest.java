@@ -15,7 +15,7 @@ import java.time.Clock;
 import java.time.ZoneOffset;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ExecutionException;
-import java.util.concurrent.ExecutorService;
+import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.Executors;
 import java.util.function.Supplier;
 import org.junit.jupiter.api.AfterEach;
@@ -23,7 +23,7 @@ import org.junit.jupiter.api.Test;
 
 class CoachServiceTest
 {
-	private final ExecutorService exec = Executors.newSingleThreadExecutor();
+	private final ScheduledExecutorService exec = Executors.newSingleThreadScheduledExecutor();
 	private static final Gson GSON = new Gson();
 
 	@AfterEach

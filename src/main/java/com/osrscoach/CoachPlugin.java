@@ -17,7 +17,7 @@ import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
-import java.util.concurrent.ExecutorService;
+import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.Executors;
 import javax.inject.Inject;
 import lombok.extern.slf4j.Slf4j;
@@ -82,7 +82,7 @@ public class CoachPlugin extends Plugin
 	private volatile WorldPoint markerTarget;
 	private BufferedImage markerIcon;
 
-	private ExecutorService executor;
+	private ScheduledExecutorService executor;
 	private CoachService service;
 	private CoachPanel panel;
 	private NavigationButton navButton;
@@ -100,7 +100,7 @@ public class CoachPlugin extends Plugin
 	@Override
 	protected void startUp()
 	{
-		executor = Executors.newSingleThreadExecutor(r ->
+		executor = Executors.newSingleThreadScheduledExecutor(r ->
 		{
 			Thread t = new Thread(r, "osrs-coach");
 			t.setDaemon(true);

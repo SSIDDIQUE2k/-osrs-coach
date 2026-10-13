@@ -101,7 +101,7 @@ public class OpenAiCompatibleProvider implements AiProvider
 			JsonObject res;
 			try
 			{
-				res = HttpJson.post(http, gson, baseUrl + "/chat/completions", headers, body, host(), req.getProgress());
+				res = HttpJson.post(http, gson, baseUrl + "/chat/completions", headers, body, host());
 			}
 			catch (CoachException e)
 			{

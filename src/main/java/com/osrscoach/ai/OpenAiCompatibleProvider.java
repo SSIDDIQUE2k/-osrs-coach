@@ -159,7 +159,7 @@ public class OpenAiCompatibleProvider implements AiProvider
 			{
 				out += "\n\n_(Answer cut off — raise 'Max answer length' in settings for longer replies.)_";
 			}
-			return new CoachReply(out, tools.sources(), tools.failures(), true, label() + " · " + req.getModel());
+			return new CoachReply(out, tools.sources(), tools.failures(), true, label() + " · " + req.getModel(), tools.marks());
 		}
 		throw new CoachException(CoachException.Kind.INVALID_RESPONSE, "The AI kept requesting lookups without answering.", true);
 	}

@@ -52,6 +52,8 @@ class RateLimitTest
 		assertEquals(72.5, HttpJson.retryAfterSeconds(null, "please try again in 1m12.5s"), 0.001);
 		assertEquals(7.0, HttpJson.retryAfterSeconds("7", GROQ_429), 0.001);
 		assertEquals(-1, HttpJson.retryAfterSeconds(null, "{\"error\":\"slow down\"}"), 0.001);
+		assertEquals(41.5, HttpJson.retryAfterSeconds(null, "You exceeded your current quota. Please retry in 41.5s."), 0.001);
+		assertEquals(41.0, HttpJson.retryAfterSeconds(null, "{\"error\":{\"details\":[{\"retryDelay\": \"41s\"}]}}"), 0.001);
 	}
 
 	@Test

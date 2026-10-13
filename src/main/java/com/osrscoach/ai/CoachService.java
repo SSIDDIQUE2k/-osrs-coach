@@ -36,6 +36,7 @@ public class CoachService
 	private final Clock clock;
 
 	private final List<ChatTurn> history = new ArrayList<>();
+	private volatile MapMarker marker;
 	private volatile AccountSnapshot lastSnapshot;
 
 	public CoachService(Supplier<CompletableFuture<AccountSnapshot>> snapshotSource, Supplier<CoachConfig> config,
@@ -49,6 +50,11 @@ public class CoachService
 		this.wiki = wiki;
 		this.executor = executor;
 		this.clock = clock;
+	}
+
+	public void setMarker(MapMarker marker)
+	{
+		this.marker = marker;
 	}
 
 	public CompletableFuture<CoachReply> ask(String question)
@@ -97,6 +103,10 @@ public class CoachService
 		String context = contextText(snap, c);
 		boolean compact = compact(c);
 		CoachTools tools = new CoachTools(c.wikiLookups() ? wiki : null, webSearch(c));
+		if (c.mapMarkers() && marker != null)
+		{
+			tools.withMarker(marker);
+		}
 		if (compact)
 		{
 			tools.compact();

@@ -24,7 +24,9 @@ final class HttpJson
 	private static final int MAX_ERROR_DETAIL = 300;
 	static final int MAX_WAIT_SECONDS = 65;
 	static final int MAX_RATE_RETRIES = 2;
-	private static final Pattern TRY_AGAIN = Pattern.compile("(?i)try again in\\s*(?:(\\d+)m)?\\s*([0-9.]+)\\s*s");
+	// Groq: "try again in 48.6s" / "1m12.5s"; Gemini: "Please retry in 41.5s" or "retryDelay": "41s".
+	private static final Pattern TRY_AGAIN = Pattern.compile("(?i)(?:try again|retry) in\\s*(?:(\\d+)m)?\\s*([0-9.]+)\\s*s");
+	private static final Pattern RETRY_DELAY = Pattern.compile("\"retryDelay\"\\s*:\\s*\"([0-9.]+)s\"");
 	/** Swappable for tests. */
 	static Sleeper sleeper = ms -> Thread.sleep(ms);
 
@@ -123,6 +125,11 @@ final class HttpJson
 			{
 				double mins = m.group(1) == null ? 0 : Double.parseDouble(m.group(1));
 				return mins * 60 + Double.parseDouble(m.group(2));
+			}
+			Matcher d = RETRY_DELAY.matcher(body);
+			if (d.find())
+			{
+				return Double.parseDouble(d.group(1));
 			}
 		}
 		return -1;

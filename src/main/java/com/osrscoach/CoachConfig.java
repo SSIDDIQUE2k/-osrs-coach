@@ -207,9 +207,18 @@ public interface CoachConfig extends Config
 		return 6;
 	}
 
+	@ConfigItem(keyName = "mapMarkers", name = "Mark destinations on map",
+		description = "Let the coach pin where you need to go on the world map, point the yellow hint arrow at it, "
+			+ "and draw a route if you use the Shortest Path plugin. Visual only.",
+		section = behaviourSection, position = 6)
+	default boolean mapMarkers()
+	{
+		return true;
+	}
+
 	@ConfigItem(keyName = "openOnStartup", name = "Open coach on startup",
 		description = "Open the OSRS Coach panel automatically when RuneLite starts",
-		section = behaviourSection, position = 6)
+		section = behaviourSection, position = 7)
 	default boolean openOnStartup()
 	{
 		return true;

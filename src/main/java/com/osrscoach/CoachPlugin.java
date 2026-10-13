@@ -3,6 +3,7 @@ package com.osrscoach;
 import com.google.gson.Gson;
 import com.google.inject.Provides;
 import com.osrscoach.ai.CoachService;
+import com.osrscoach.ai.MapMarker;
 import com.osrscoach.context.AccountSnapshot;
 import com.osrscoach.context.Availability;
 import com.osrscoach.context.BankCache;
@@ -25,11 +26,18 @@ import net.runelite.api.Client;
 import net.runelite.api.GameState;
 import net.runelite.api.Quest;
 import net.runelite.api.Skill;
+import net.runelite.api.coords.WorldPoint;
 import net.runelite.api.events.ChatMessage;
+import net.runelite.api.events.GameTick;
 import net.runelite.api.events.GameStateChanged;
 import net.runelite.api.events.ItemContainerChanged;
 import net.runelite.api.gameval.InventoryID;
+import net.runelite.client.callback.ClientThread;
 import net.runelite.client.config.ConfigManager;
+import net.runelite.client.eventbus.EventBus;
+import net.runelite.client.events.PluginMessage;
+import net.runelite.client.ui.overlay.worldmap.WorldMapPoint;
+import net.runelite.client.ui.overlay.worldmap.WorldMapPointManager;
 import net.runelite.client.eventbus.Subscribe;
 import net.runelite.client.events.ConfigChanged;
 import net.runelite.client.plugins.Plugin;
@@ -63,6 +71,16 @@ public class CoachPlugin extends Plugin
 	private ContextCollector collector;
 	@Inject
 	private BankCache bankCache;
+	@Inject
+	private ClientThread clientThread;
+	@Inject
+	private WorldMapPointManager worldMapPointManager;
+	@Inject
+	private EventBus eventBus;
+
+	private volatile WorldMapPoint markerPoint;
+	private volatile WorldPoint markerTarget;
+	private BufferedImage markerIcon;
 
 	private ExecutorService executor;
 	private CoachService service;
@@ -106,7 +124,24 @@ public class CoachPlugin extends Plugin
 			}
 		}
 
-		panel = new CoachPanel(service, () -> config, configManager, quests, skills, q -> selectedQuest = q);
+		markerIcon = ImageUtil.loadImageResource(getClass(), "marker.png");
+		service.setMarker(new MapMarker()
+		{
+			@Override
+			public void mark(String label, int x, int y, int plane)
+			{
+				clientThread.invoke(() -> placeMarker(label, new WorldPoint(x, y, plane)));
+			}
+
+			@Override
+			public void clear()
+			{
+				clientThread.invoke(CoachPlugin.this::clearMarker);
+			}
+		});
+
+		panel = new CoachPanel(service, () -> config, configManager, quests, skills, q -> selectedQuest = q,
+			() -> clientThread.invoke(this::clearMarker));
 		BufferedImage icon = ImageUtil.loadImageResource(getClass(), "icon.png");
 		navButton = NavigationButton.builder().tooltip("OSRS Coach").icon(icon).priority(1).panel(panel).build();
 		clientToolbar.addNavigation(navButton);
@@ -124,6 +159,7 @@ public class CoachPlugin extends Plugin
 	@Override
 	protected void shutDown()
 	{
+		clientThread.invoke(this::clearMarker);
 		clientToolbar.removeNavigation(navButton);
 		executor.shutdownNow();
 		bankCache.clear();
@@ -162,6 +198,79 @@ public class CoachPlugin extends Plugin
 		if (config.sendBank() && e.getContainerId() == InventoryID.BANK && e.getItemContainer() != null)
 		{
 			bankCache.update(collector.toStacks(e.getItemContainer().getItems(), false), java.time.Instant.now());
+		}
+	}
+
+	@Subscribe
+	public void onGameTick(GameTick t)
+	{
+		WorldPoint target = markerTarget;
+		if (target == null || client.getLocalPlayer() == null)
+		{
+			return;
+		}
+		WorldPoint me = client.getLocalPlayer().getWorldLocation();
+		if (me != null && me.getPlane() == target.getPlane() && me.distanceTo2D(target) <= 3)
+		{
+			clearMarker();
+			if (panel != null)
+			{
+				panel.showArrived();
+			}
+		}
+	}
+
+	/** Client thread. Draws only: world map pin, hint arrow, optional Shortest Path route. */
+	private void placeMarker(String label, WorldPoint wp)
+	{
+		clearMarker();
+		WorldMapPoint p = WorldMapPoint.builder()
+			.worldPoint(wp)
+			.image(markerIcon)
+			.name("Coach: " + label)
+			.tooltip("Coach: " + label)
+			.snapToEdge(true)
+			.jumpOnClick(true)
+			.build();
+		worldMapPointManager.add(p);
+		markerPoint = p;
+		markerTarget = wp;
+		client.setHintArrow(wp);
+		Map<String, Object> data = new java.util.HashMap<>();
+		if (client.getLocalPlayer() != null)
+		{
+			data.put("start", client.getLocalPlayer().getWorldLocation());
+		}
+		data.put("target", wp);
+		eventBus.post(new PluginMessage("shortestpath", "path", data));
+		if (panel != null)
+		{
+			panel.showMarker(label);
+		}
+	}
+
+	/** Client thread. Removes only what the coach placed. */
+	void clearMarker()
+	{
+		WorldMapPoint p = markerPoint;
+		WorldPoint target = markerTarget;
+		if (p != null)
+		{
+			worldMapPointManager.remove(p);
+		}
+		if (target != null)
+		{
+			if (client.hasHintArrow() && target.equals(client.getHintArrowPoint()))
+			{
+				client.clearHintArrow();
+			}
+			eventBus.post(new PluginMessage("shortestpath", "clear"));
+		}
+		markerPoint = null;
+		markerTarget = null;
+		if (panel != null)
+		{
+			panel.showMarker(null);
 		}
 	}
 

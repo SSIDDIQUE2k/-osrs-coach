@@ -62,6 +62,9 @@ public class CoachPanel extends PluginPanel
 	private final List<String> questNames;
 	private final List<String> skillNames;
 	private final Consumer<String> onQuestSelected;
+	private final Runnable onClearMarker;
+	private final JPanel markerBar = new JPanel(new BorderLayout(4, 0));
+	private final JLabel markerText = new JLabel();
 
 	private final JLabel providerLabel = new JLabel();
 	private final JLabel contextLabel = new JLabel();
@@ -80,7 +83,7 @@ public class CoachPanel extends PluginPanel
 	private boolean busy;
 
 	public CoachPanel(CoachService service, Supplier<CoachConfig> config, ConfigManager configManager,
-		List<String> questNames, List<String> skillNames, Consumer<String> onQuestSelected)
+		List<String> questNames, List<String> skillNames, Consumer<String> onQuestSelected, Runnable onClearMarker)
 	{
 		super(false);
 		this.service = service;
@@ -89,6 +92,7 @@ public class CoachPanel extends PluginPanel
 		this.questNames = questNames;
 		this.skillNames = skillNames;
 		this.onQuestSelected = onQuestSelected;
+		this.onClearMarker = onClearMarker;
 
 		setLayout(new BorderLayout(0, 6));
 		setBorder(new EmptyBorder(8, 8, 8, 8));
@@ -135,6 +139,17 @@ public class CoachPanel extends PluginPanel
 		banner.add(bannerButtons, BorderLayout.SOUTH);
 		banner.setVisible(false);
 		top.add(left(banner));
+		top.add(Box.createVerticalStrut(4));
+
+		// active destination marker
+		markerBar.setBackground(new Color(60, 50, 15));
+		markerBar.setBorder(new EmptyBorder(4, 6, 4, 6));
+		markerText.setFont(FontManager.getRunescapeSmallFont());
+		markerText.setForeground(new Color(255, 205, 60));
+		markerBar.add(markerText, BorderLayout.CENTER);
+		markerBar.add(small("Clear", "Remove the map pin and arrow", onClearMarker), BorderLayout.EAST);
+		markerBar.setVisible(false);
+		top.add(left(markerBar));
 		top.add(Box.createVerticalStrut(4));
 
 		// quick actions
@@ -242,6 +257,33 @@ public class CoachPanel extends PluginPanel
 		});
 	}
 
+	/** Any thread. Null hides the bar. */
+	public void showMarker(String label)
+	{
+		SwingUtilities.invokeLater(() ->
+		{
+			if (label == null)
+			{
+				markerBar.setVisible(false);
+			}
+			else
+			{
+				markerText.setText(wrap("» Going to: <b>" + Markdown.escape(label) + "</b><br>Follow the yellow arrow or open the world map."));
+				markerBar.setVisible(true);
+			}
+			revalidate();
+		});
+	}
+
+	public void showArrived()
+	{
+		SwingUtilities.invokeLater(() ->
+		{
+			status.setForeground(ColorScheme.PROGRESS_COMPLETE_COLOR);
+			status.setText("You've arrived — marker cleared.");
+		});
+	}
+
 	public void refreshContext()
 	{
 		contextLabel.setText(wrap("Reading account…"));
@@ -319,6 +361,13 @@ public class CoachPanel extends PluginPanel
 				{
 					html.append(" <span style='color:#9a9a9a'>(").append(Markdown.escape(s.getNote())).append(")</span>");
 				}
+			}
+		}
+		if (r.getMarks() != null)
+		{
+			for (String m : r.getMarks())
+			{
+				html.append("<br><span style='color:#ffcd3c'>» Marked on your map: ").append(Markdown.escape(m)).append("</span>");
 			}
 		}
 		for (String w : r.getWarnings())

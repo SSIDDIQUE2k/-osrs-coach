@@ -15,4 +15,6 @@ public class CoachReply
 	/** False for mock mode. The UI labels non-live replies loudly. */
 	boolean live;
 	String providerLabel;
+	/** Destinations the coach marked on the player's map during this answer. */
+	List<String> marks;
 }

@@ -87,7 +87,7 @@ public class MockProvider implements AiProvider
 			sb.append("\n_Wiki lookups are off, so nothing here was verified._\n");
 		}
 		sb.append("**Sources:** ").append(tools.sources().isEmpty() ? "none (mock mode)" : "see the verified links below — fetched live from the wiki") .append('\n');
-		return new CoachReply(sb.toString(), tools.sources(), tools.failures(), false, label());
+		return new CoachReply(sb.toString(), tools.sources(), tools.failures(), false, label(), tools.marks());
 	}
 
 	static String firstInProgress(AccountSnapshot s)

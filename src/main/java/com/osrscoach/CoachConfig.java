@@ -35,13 +35,17 @@ public interface CoachConfig extends Config
 	@ConfigSection(name = "AI provider", description = "Which AI service answers your questions", position = 0)
 	String providerSection = "provider";
 
-	@ConfigSection(name = "Context sent to AI", description = "Choose which account details may be sent with a question", position = 1)
+	@ConfigSection(name = "Backup AI providers", description = "Used automatically when the main provider is rate limited, out of credit or down",
+		position = 1, closedByDefault = true)
+	String backupSection = "backup";
+
+	@ConfigSection(name = "Context sent to AI", description = "Choose which account details may be sent with a question", position = 2)
 	String contextSection = "context";
 
-	@ConfigSection(name = "About me", description = "Things the game can't tell the coach", position = 2)
+	@ConfigSection(name = "About me", description = "Things the game can't tell the coach", position = 3)
 	String aboutSection = "about";
 
-	@ConfigSection(name = "Behaviour", description = "Lookups, history and suggestions", position = 3)
+	@ConfigSection(name = "Behaviour", description = "Lookups, history and suggestions", position = 4)
 	String behaviourSection = "behaviour";
 
 	// ---------------- provider ----------------
@@ -84,6 +88,50 @@ public interface CoachConfig extends Config
 	default int maxTokens()
 	{
 		return 1200;
+	}
+
+	@ConfigItem(keyName = "backup1BaseUrl", name = "Backup 1: Base URL",
+		description = "OpenAI-compatible URL, e.g. https://generativelanguage.googleapis.com/v1beta/openai/ (Gemini) or https://api.groq.com/openai/v1. Blank = off.",
+		section = backupSection, position = 10)
+	default String backup1BaseUrl()
+	{
+		return "";
+	}
+
+	@ConfigItem(keyName = "backup1ApiKey", name = "Backup 1: API key", description = "Stored locally, never logged.",
+		secret = true, section = backupSection, position = 11)
+	default String backup1ApiKey()
+	{
+		return "";
+	}
+
+	@ConfigItem(keyName = "backup1Model", name = "Backup 1: Model", description = "e.g. gemini-3.8-flash or openai/gpt-oss-120b",
+		section = backupSection, position = 12)
+	default String backup1Model()
+	{
+		return "";
+	}
+
+	@ConfigItem(keyName = "backup2BaseUrl", name = "Backup 2: Base URL",
+		description = "OpenAI-compatible URL, e.g. https://generativelanguage.googleapis.com/v1beta/openai/ (Gemini) or https://api.groq.com/openai/v1. Blank = off.",
+		section = backupSection, position = 20)
+	default String backup2BaseUrl()
+	{
+		return "";
+	}
+
+	@ConfigItem(keyName = "backup2ApiKey", name = "Backup 2: API key", description = "Stored locally, never logged.",
+		secret = true, section = backupSection, position = 21)
+	default String backup2ApiKey()
+	{
+		return "";
+	}
+
+	@ConfigItem(keyName = "backup2Model", name = "Backup 2: Model", description = "e.g. gemini-3.8-flash or openai/gpt-oss-120b",
+		section = backupSection, position = 22)
+	default String backup2Model()
+	{
+		return "";
 	}
 
 	// ---------------- context toggles ----------------

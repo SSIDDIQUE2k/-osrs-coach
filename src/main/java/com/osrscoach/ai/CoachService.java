@@ -135,6 +135,86 @@ public class CoachService
 		return askBlocking(question, null);
 	}
 
+	/** One AI service to try, in order: main provider, then configured backups. */
+	static final class Target
+	{
+		final String name;
+		final AiProvider provider;
+		final String model;
+		final boolean compact;
+		final boolean mock;
+
+		Target(String name, AiProvider provider, String model, boolean compact, boolean mock)
+		{
+			this.name = name;
+			this.provider = provider;
+			this.model = model == null ? "" : model.trim();
+			this.compact = compact;
+			this.mock = mock;
+		}
+	}
+
+	List<Target> targets(CoachConfig c, AccountSnapshot snap)
+	{
+		List<Target> out = new ArrayList<>();
+		AiProvider main = provider(c, snap);
+		boolean mock = c.provider() == CoachConfig.Provider.MOCK;
+		out.add(new Target(mock ? "Mock mode" : "Main provider (" + hostOf(c.provider() == CoachConfig.Provider.ANTHROPIC ? "https://api.anthropic.com" : c.baseUrl()) + ")",
+			main, c.model(), compact(c), mock));
+		if (!mock)
+		{
+			addBackup(out, c, c.backup1BaseUrl(), c.backup1ApiKey(), c.backup1Model(), 1);
+			addBackup(out, c, c.backup2BaseUrl(), c.backup2ApiKey(), c.backup2Model(), 2);
+		}
+		return out;
+	}
+
+	private void addBackup(List<Target> out, CoachConfig c, String url, String key, String model, int n)
+	{
+		if (url == null || url.trim().isEmpty() || model == null || model.trim().isEmpty())
+		{
+			return;
+		}
+		boolean compact = c.compactMode() || url.contains("groq.com");
+		out.add(new Target("Backup " + n + " (" + hostOf(url) + ")", new OpenAiCompatibleProvider(aiHttp(), gson, key, url), model, compact, false));
+	}
+
+	static String hostOf(String url)
+	{
+		String s = url == null ? "" : url.trim().replaceFirst("^https?://", "");
+		int i = s.indexOf('/');
+		return i < 0 ? s : s.substring(0, i);
+	}
+
+	private CoachReply ask(Target t, CoachConfig c, String question, String context, java.util.function.Consumer<String> progress)
+		throws CoachException
+	{
+		CoachTools tools = new CoachTools(c.wikiLookups() ? wiki : null, webSearch(c));
+		if (c.mapMarkers() && marker != null)
+		{
+			tools.withMarker(marker);
+		}
+		if (t.compact)
+		{
+			tools.compact();
+		}
+		if (!t.mock && t.model.isEmpty())
+		{
+			throw new CoachException(CoachException.Kind.BAD_CONFIG, "Set a model name in the plugin settings.", false);
+		}
+		CoachRequest req = CoachRequest.builder()
+			.systemPrompt(CoachPrompt.system(context, tools.wikiEnabled(), tools.webEnabled()))
+			.history(trimmedHistory(t.compact ? Math.min(2, c.historyTurns()) : c.historyTurns()))
+			.userMessage(question)
+			.model(t.model)
+			.maxTokens(c.maxTokens())
+			.accountContext(context)
+			.progress(progress)
+			.compact(t.compact)
+			.build();
+		return t.provider.respond(req, tools);
+	}
+
 	/** True for settings or providers known to have tight free-tier rate limits. */
 	static boolean compact(CoachConfig c)
 	{
@@ -147,33 +227,38 @@ public class CoachService
 		CoachConfig c = config.get();
 		AccountSnapshot snap = readSnapshot();
 		String context = contextText(snap, c);
-		boolean compact = compact(c);
-		CoachTools tools = new CoachTools(c.wikiLookups() ? wiki : null, webSearch(c));
-		if (c.mapMarkers() && marker != null)
-		{
-			tools.withMarker(marker);
-		}
-		if (compact)
-		{
-			tools.compact();
-		}
-		CoachRequest req = CoachRequest.builder()
-			.systemPrompt(CoachPrompt.system(context, tools.wikiEnabled(), tools.webEnabled()))
-			.history(trimmedHistory(compact ? Math.min(2, c.historyTurns()) : c.historyTurns()))
-			.userMessage(question)
-			.model(c.model() == null ? "" : c.model().trim())
-			.maxTokens(c.maxTokens())
-			.accountContext(context)
-			.progress(progress)
-			.compact(compact)
-			.build();
 
-		AiProvider provider = provider(c, snap);
-		if (c.provider() != CoachConfig.Provider.MOCK && req.getModel().isEmpty())
+		List<Target> targets = targets(c, snap);
+		List<String> fallbackNotes = new ArrayList<>();
+		CoachReply reply = null;
+		for (int i = 0; i < targets.size(); i++)
 		{
-			throw new CoachException(CoachException.Kind.BAD_CONFIG, "Set a model name in the plugin settings.", false);
+			Target t = targets.get(i);
+			try
+			{
+				reply = ask(t, c, question, context, progress);
+				break;
+			}
+			catch (CoachException e)
+			{
+				boolean last = i == targets.size() - 1;
+				if (last)
+				{
+					throw e;
+				}
+				fallbackNotes.add(t.name + " failed (" + e.getKind().getTitle() + ") — answered by " + targets.get(i + 1).name + " instead.");
+				if (progress != null)
+				{
+					progress.accept(t.name + ": " + e.getKind().getTitle() + " — trying " + targets.get(i + 1).name + "…");
+				}
+			}
 		}
-		CoachReply reply = provider.respond(req, tools);
+		if (!fallbackNotes.isEmpty())
+		{
+			List<String> warnings = new ArrayList<>(fallbackNotes);
+			warnings.addAll(reply.getWarnings());
+			reply = new CoachReply(reply.getText(), reply.getLookedUp(), warnings, reply.isLive(), reply.getProviderLabel(), reply.getMarks());
+		}
 		synchronized (history)
 		{
 			history.add(new ChatTurn(ChatTurn.Role.USER, question));

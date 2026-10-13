@@ -207,6 +207,14 @@ public interface CoachConfig extends Config
 		return 6;
 	}
 
+	@ConfigItem(keyName = "openOnStartup", name = "Open coach on startup",
+		description = "Open the OSRS Coach panel automatically when RuneLite starts",
+		section = behaviourSection, position = 6)
+	default boolean openOnStartup()
+	{
+		return true;
+	}
+
 	@ConfigItem(keyName = "proactive", name = "Quest-complete suggestions",
 		description = "When you finish a quest, show ONE quiet prompt in the panel. No popups or notifications.",
 		section = behaviourSection, position = 5)

@@ -108,8 +108,12 @@ public class CoachPlugin extends Plugin
 
 		panel = new CoachPanel(service, () -> config, configManager, quests, skills, q -> selectedQuest = q);
 		BufferedImage icon = ImageUtil.loadImageResource(getClass(), "icon.png");
-		navButton = NavigationButton.builder().tooltip("OSRS Coach").icon(icon).priority(7).panel(panel).build();
+		navButton = NavigationButton.builder().tooltip("OSRS Coach").icon(icon).priority(1).panel(panel).build();
 		clientToolbar.addNavigation(navButton);
+		if (config.openOnStartup())
+		{
+			javax.swing.SwingUtilities.invokeLater(() -> clientToolbar.openPanel(navButton));
+		}
 
 		if (client.getGameState() == GameState.LOGGED_IN)
 		{

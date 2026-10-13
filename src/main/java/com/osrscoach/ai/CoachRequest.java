@@ -16,4 +16,8 @@ public class CoachRequest
 	int maxTokens;
 	/** Plain account-context text (also embedded in systemPrompt); used by mock mode. */
 	String accountContext;
+	/** Status updates for the UI (e.g. rate-limit waits). May be null. */
+	java.util.function.Consumer<String> progress;
+	/** Fewer tool rounds; for low-limit free tiers. */
+	boolean compact;
 }

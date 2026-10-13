@@ -284,7 +284,15 @@ public class CoachPanel extends PluginPanel
 		status.setText(config.get().webSearch() != CoachConfig.WebSearch.OFF ? "Thinking… (reading account, searching the wiki & web)" : "Thinking… (reading account, checking the wiki)");
 		retry.setVisible(false);
 
-		service.ask(question).whenComplete((reply, err) -> SwingUtilities.invokeLater(() ->
+		java.util.function.Consumer<String> progress = msg -> SwingUtilities.invokeLater(() ->
+		{
+			if (busy)
+			{
+				status.setForeground(msg.startsWith("Free-tier") ? new Color(230, 150, 40) : ColorScheme.LIGHT_GRAY_COLOR);
+				status.setText(wrap(Markdown.escape(msg)));
+			}
+		});
+		service.ask(question, progress).whenComplete((reply, err) -> SwingUtilities.invokeLater(() ->
 		{
 			setBusy(false);
 			if (err != null)

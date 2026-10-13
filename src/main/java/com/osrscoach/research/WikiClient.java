@@ -35,7 +35,7 @@ public class WikiClient
 	public static final String WIKI = "https://oldschool.runescape.wiki";
 	public static final String PRICES = "https://prices.runescape.wiki/api/v1/osrs";
 	static final String USER_AGENT = "osrs-coach RuneLite plugin (beginner coach; github.com/runelite/plugin-hub)";
-	private static final int MAX_PAGE_CHARS = 9000;
+	public static final int DEFAULT_PAGE_CHARS = 9000;
 	private static final long MAPPING_TTL_MS = 6L * 3600 * 1000;
 	private static final Pattern TAGS = Pattern.compile("<[^>]+>");
 	private static final DateTimeFormatter HHMM = DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm 'UTC'").withZone(ZoneOffset.UTC);
@@ -98,6 +98,11 @@ public class WikiClient
 
 	public LookupResult page(String title) throws LookupException
 	{
+		return page(title, DEFAULT_PAGE_CHARS);
+	}
+
+	public LookupResult page(String title, int maxChars) throws LookupException
+	{
 		HttpUrl url = HttpUrl.parse(wikiBase + "/api.php").newBuilder()
 			.addQueryParameter("action", "parse")
 			.addQueryParameter("page", title)
@@ -119,10 +124,10 @@ public class WikiClient
 		}
 		String realTitle = parse.get("title").getAsString();
 		String text = parse.get("wikitext").getAsString();
-		boolean truncated = text.length() > MAX_PAGE_CHARS;
+		boolean truncated = text.length() > maxChars;
 		if (truncated)
 		{
-			text = text.substring(0, MAX_PAGE_CHARS);
+			text = text.substring(0, maxChars);
 		}
 		String link = pageUrl(realTitle);
 		return new LookupResult("Page: " + realTitle + " <" + link + ">\n" + text + (truncated ? "\n[...page truncated...]" : ""),

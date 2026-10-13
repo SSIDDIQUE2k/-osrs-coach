@@ -66,7 +66,8 @@ public class AnthropicProvider implements AiProvider
 			toolDefs.add(d);
 		}
 
-		for (int round = 0; round <= MAX_ROUNDS; round++)
+		int maxRounds = req.isCompact() ? 3 : MAX_ROUNDS;
+		for (int round = 0; round <= maxRounds; round++)
 		{
 			JsonObject body = new JsonObject();
 			body.addProperty("model", req.getModel());
@@ -76,7 +77,7 @@ public class AnthropicProvider implements AiProvider
 			if (toolDefs.size() > 0)
 			{
 				body.add("tools", toolDefs);
-				if (round == MAX_ROUNDS)
+				if (round == maxRounds)
 				{
 					JsonObject none = new JsonObject();
 					none.addProperty("type", "none");
@@ -84,7 +85,7 @@ public class AnthropicProvider implements AiProvider
 				}
 			}
 
-			JsonObject res = HttpJson.post(http, gson, url, headers, body, "Anthropic");
+			JsonObject res = HttpJson.post(http, gson, url, headers, body, "Anthropic", req.getProgress());
 			JsonArray content = res.has("content") && res.get("content").isJsonArray() ? res.getAsJsonArray("content") : null;
 			if (content == null)
 			{
@@ -92,7 +93,7 @@ public class AnthropicProvider implements AiProvider
 			}
 			String stop = res.has("stop_reason") && !res.get("stop_reason").isJsonNull() ? res.get("stop_reason").getAsString() : "";
 
-			if ("tool_use".equals(stop) && round < MAX_ROUNDS)
+			if ("tool_use".equals(stop) && round < maxRounds)
 			{
 				JsonObject assistant = new JsonObject();
 				assistant.addProperty("role", "assistant");

@@ -53,11 +53,17 @@ public class CoachService
 
 	public CompletableFuture<CoachReply> ask(String question)
 	{
+		return ask(question, null);
+	}
+
+	/** @param progress optional status updates (called on the worker thread). */
+	public CompletableFuture<CoachReply> ask(String question, java.util.function.Consumer<String> progress)
+	{
 		return CompletableFuture.supplyAsync(() ->
 		{
 			try
 			{
-				return askBlocking(question);
+				return askBlocking(question, progress);
 			}
 			catch (CoachException e)
 			{
@@ -74,17 +80,36 @@ public class CoachService
 
 	CoachReply askBlocking(String question) throws CoachException
 	{
+		return askBlocking(question, null);
+	}
+
+	/** True for settings or providers known to have tight free-tier rate limits. */
+	static boolean compact(CoachConfig c)
+	{
+		return c.compactMode()
+			|| (c.provider() == CoachConfig.Provider.OPENAI_COMPATIBLE && c.baseUrl() != null && c.baseUrl().contains("groq.com"));
+	}
+
+	CoachReply askBlocking(String question, java.util.function.Consumer<String> progress) throws CoachException
+	{
 		CoachConfig c = config.get();
 		AccountSnapshot snap = readSnapshot();
 		String context = contextText(snap, c);
+		boolean compact = compact(c);
 		CoachTools tools = new CoachTools(c.wikiLookups() ? wiki : null, webSearch(c));
+		if (compact)
+		{
+			tools.compact();
+		}
 		CoachRequest req = CoachRequest.builder()
 			.systemPrompt(CoachPrompt.system(context, tools.wikiEnabled(), tools.webEnabled()))
-			.history(trimmedHistory(c.historyTurns()))
+			.history(trimmedHistory(compact ? Math.min(2, c.historyTurns()) : c.historyTurns()))
 			.userMessage(question)
 			.model(c.model() == null ? "" : c.model().trim())
 			.maxTokens(c.maxTokens())
 			.accountContext(context)
+			.progress(progress)
+			.compact(compact)
 			.build();
 
 		AiProvider provider = provider(c, snap);

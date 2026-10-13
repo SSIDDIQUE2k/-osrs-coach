@@ -82,7 +82,8 @@ public class OpenAiCompatibleProvider implements AiProvider
 			toolDefs.add(d);
 		}
 
-		for (int round = 0; round <= MAX_ROUNDS; round++)
+		int maxRounds = req.isCompact() ? 3 : MAX_ROUNDS;
+		for (int round = 0; round <= maxRounds; round++)
 		{
 			JsonObject body = new JsonObject();
 			body.addProperty("model", req.getModel());
@@ -91,12 +92,12 @@ public class OpenAiCompatibleProvider implements AiProvider
 			if (toolDefs.size() > 0)
 			{
 				body.add("tools", toolDefs);
-				if (round == MAX_ROUNDS)
+				if (round == maxRounds)
 				{
 					body.addProperty("tool_choice", "none");
 				}
 			}
-			JsonObject res = HttpJson.post(http, gson, baseUrl + "/chat/completions", headers, body, host());
+			JsonObject res = HttpJson.post(http, gson, baseUrl + "/chat/completions", headers, body, host(), req.getProgress());
 			JsonObject message;
 			String finish;
 			try
@@ -115,7 +116,7 @@ public class OpenAiCompatibleProvider implements AiProvider
 			}
 
 			JsonArray calls = message.has("tool_calls") && message.get("tool_calls").isJsonArray() ? message.getAsJsonArray("tool_calls") : null;
-			if (calls != null && calls.size() > 0 && round < MAX_ROUNDS)
+			if (calls != null && calls.size() > 0 && round < maxRounds)
 			{
 				messages.add(message);
 				for (JsonElement el : calls)

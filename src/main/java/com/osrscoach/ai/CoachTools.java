@@ -71,6 +71,9 @@ public class CoachTools
 	private final Map<String, Source> sources = new LinkedHashMap<>();
 	private final List<String> failures = new ArrayList<>();
 	private int calls;
+	private int maxCalls = MAX_CALLS;
+	private int wikiPageChars = WikiClient.DEFAULT_PAGE_CHARS;
+	private int webPageChars = WebSearchClient.DEFAULT_PAGE_CHARS;
 
 	/** @param wiki null when wiki lookups are disabled. */
 	public CoachTools(WikiClient wiki)
@@ -86,6 +89,15 @@ public class CoachTools
 	{
 		this.wiki = wiki;
 		this.web = web;
+	}
+
+	/** Smaller pages and fewer lookups, for free API tiers with low tokens-per-minute limits. */
+	public CoachTools compact()
+	{
+		maxCalls = 3;
+		wikiPageChars = 3000;
+		webPageChars = 2500;
+		return this;
 	}
 
 	public boolean enabled()
@@ -127,7 +139,7 @@ public class CoachTools
 		{
 			return "LOOKUP_UNAVAILABLE: lookups are turned off. Tell the player you could not verify this.";
 		}
-		if (++calls > MAX_CALLS)
+		if (++calls > maxCalls)
 		{
 			return "LOOKUP_LIMIT: too many lookups for one answer. Answer with what you have and say what is unverified.";
 		}
@@ -160,7 +172,7 @@ public class CoachTools
 					{
 						return "NOT_ALLOWED: web_page only opens URLs returned by web_search in this answer.";
 					}
-					r = web.fetch(url);
+					r = web.fetch(url, webPageChars);
 					webResult = true;
 					break;
 				}
@@ -168,7 +180,7 @@ public class CoachTools
 					r = wiki.search(str(args, "query"));
 					break;
 				case "wiki_page":
-					r = wiki.page(str(args, "title"));
+					r = wiki.page(str(args, "title"), wikiPageChars);
 					break;
 				case "ge_price":
 					r = wiki.price(str(args, "item_name"));

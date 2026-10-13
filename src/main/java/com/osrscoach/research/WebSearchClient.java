@@ -41,7 +41,7 @@ public class WebSearchClient
 	static final String BRAVE_URL = "https://api.search.brave.com/res/v1/web/search";
 	private static final MediaType JSON = MediaType.parse("application/json; charset=utf-8");
 	private static final int RESULTS = 6;
-	private static final int MAX_PAGE_CHARS = 7000;
+	public static final int DEFAULT_PAGE_CHARS = 7000;
 	private static final long MAX_PAGE_BYTES = 2_000_000;
 	private static final Pattern SCRIPTS = Pattern.compile("(?is)<(script|style|noscript|svg|nav|footer|header)[^>]*>.*?</\\1>");
 	private static final Pattern TAGS = Pattern.compile("(?s)<[^>]+>");
@@ -149,6 +149,11 @@ public class WebSearchClient
 	/** Reads one result page as plain text. Only http(s); size-capped; HTML stripped. */
 	public LookupResult fetch(String url) throws LookupException
 	{
+		return fetch(url, DEFAULT_PAGE_CHARS);
+	}
+
+	public LookupResult fetch(String url, int maxChars) throws LookupException
+	{
 		HttpUrl u = HttpUrl.parse(url);
 		if (u == null)
 		{
@@ -174,10 +179,10 @@ public class WebSearchClient
 			okio.Buffer buf = src.getBuffer();
 			String raw = buf.readUtf8(Math.min(buf.size(), MAX_PAGE_BYTES));
 			String text = htmlToText(raw);
-			boolean cut = text.length() > MAX_PAGE_CHARS;
+			boolean cut = text.length() > maxChars;
 			if (cut)
 			{
-				text = text.substring(0, MAX_PAGE_CHARS);
+				text = text.substring(0, maxChars);
 			}
 			String title = u.host();
 			return new LookupResult("Page: " + url + "\n" + text + (cut ? "\n[...page truncated...]" : ""),

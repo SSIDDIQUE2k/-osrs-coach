@@ -191,7 +191,16 @@ public interface CoachConfig extends Config
 		return "";
 	}
 
-	@ConfigItem(keyName = "historyTurns", name = "Remembered turns", description = "How many previous Q&A pairs are re-sent for context", section = behaviourSection, position = 3)
+	@ConfigItem(keyName = "compactMode", name = "Compact mode (free tiers)",
+		description = "Shorter wiki pages and fewer lookups per answer, for free plans with low tokens-per-minute limits. "
+			+ "Always on automatically for Groq.",
+		section = behaviourSection, position = 3)
+	default boolean compactMode()
+	{
+		return false;
+	}
+
+	@ConfigItem(keyName = "historyTurns", name = "Remembered turns", description = "How many previous Q&A pairs are re-sent for context", section = behaviourSection, position = 4)
 	@Range(min = 0, max = 20)
 	default int historyTurns()
 	{
@@ -200,7 +209,7 @@ public interface CoachConfig extends Config
 
 	@ConfigItem(keyName = "proactive", name = "Quest-complete suggestions",
 		description = "When you finish a quest, show ONE quiet prompt in the panel. No popups or notifications.",
-		section = behaviourSection, position = 4)
+		section = behaviourSection, position = 5)
 	default boolean proactive()
 	{
 		return false;

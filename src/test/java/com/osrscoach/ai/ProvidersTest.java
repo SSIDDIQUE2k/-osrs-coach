@@ -261,4 +261,19 @@ class ProvidersTest
 		}
 		assertTrue(ai.bodies.get(ai.bodies.size() - 1).contains("LOOKUP_LIMIT"));
 	}
+
+	@Test
+	void openAiUsesMaxCompletionTokensAndSelfHeals() throws Exception
+	{
+		FakeHttp openai = new FakeHttp().respond(200, "{\"choices\":[{\"message\":{\"content\":\"hi\"}}]}");
+		new OpenAiCompatibleProvider(openai.client(), GSON, "sk", "https://api.openai.com/v1").respond(req(), new CoachTools(null));
+		assertTrue(openai.bodies.get(0).contains("\"max_completion_tokens\""));
+		assertFalse(openai.bodies.get(0).contains("\"max_tokens\""));
+
+		FakeHttp other = new FakeHttp()
+			.respond(400, "{\"error\":{\"message\":\"Unsupported parameter: 'max_tokens'. Use 'max_completion_tokens' instead.\"}}")
+			.respond(200, "{\"choices\":[{\"message\":{\"content\":\"ok\"}}]}");
+		assertEquals("ok", new OpenAiCompatibleProvider(other.client(), GSON, "k", "https://proxy.test/v1").respond(req(), new CoachTools(null)).getText());
+		assertTrue(other.bodies.get(1).contains("\"max_completion_tokens\""));
+	}
 }

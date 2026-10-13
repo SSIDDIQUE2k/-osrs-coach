@@ -83,19 +83,39 @@ public class OpenAiCompatibleProvider implements AiProvider
 		}
 
 		int maxRounds = req.isCompact() ? 3 : MAX_ROUNDS;
+		boolean useCompletionTokens = host().equals("api.openai.com");
+		boolean switchedTokenParam = false;
 		// One extra round: after the lookup budget is spent the model gets "answer now" tool results,
 		// because some providers (e.g. Groq) reject tool_choice=none when the model still calls a tool.
 		for (int round = 0; round <= maxRounds + 1; round++)
 		{
 			JsonObject body = new JsonObject();
 			body.addProperty("model", req.getModel());
-			body.addProperty("max_tokens", req.getMaxTokens());
+			// OpenAI's newer models reject max_tokens and require max_completion_tokens; most other servers want max_tokens.
+			body.addProperty(useCompletionTokens ? "max_completion_tokens" : "max_tokens", req.getMaxTokens());
 			body.add("messages", messages);
 			if (toolDefs.size() > 0)
 			{
 				body.add("tools", toolDefs);
 			}
-			JsonObject res = HttpJson.post(http, gson, baseUrl + "/chat/completions", headers, body, host(), req.getProgress());
+			JsonObject res;
+			try
+			{
+				res = HttpJson.post(http, gson, baseUrl + "/chat/completions", headers, body, host(), req.getProgress());
+			}
+			catch (CoachException e)
+			{
+				// Self-heal if the server names the other token parameter in its 400 error.
+				String m = e.getMessage() == null ? "" : e.getMessage();
+				if (!switchedTokenParam && e.getKind() == CoachException.Kind.BAD_CONFIG && m.contains(useCompletionTokens ? "max_tokens" : "max_completion_tokens"))
+				{
+					switchedTokenParam = true;
+					useCompletionTokens = !useCompletionTokens;
+					round--;
+					continue;
+				}
+				throw e;
+			}
 			JsonObject message;
 			String finish;
 			try

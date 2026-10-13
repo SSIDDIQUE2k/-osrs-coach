@@ -61,7 +61,9 @@ final class HttpJson
 				long secs = Math.max(1, (long) Math.ceil(rl.waitSeconds));
 				if (progress != null)
 				{
-					progress.accept("Free-tier limit reached — waiting " + secs + "s, then continuing…");
+					progress.accept(rl.serverBusy
+						? "AI service busy — retrying in " + secs + "s…"
+						: "Free-tier limit reached — waiting " + secs + "s, then continuing…");
 				}
 				try
 				{
@@ -85,12 +87,19 @@ final class HttpJson
 	{
 		final double waitSeconds;
 		final CoachException error;
+		final boolean serverBusy;
 
 		RateLimited(double waitSeconds, CoachException error)
+		{
+			this(waitSeconds, error, false);
+		}
+
+		RateLimited(double waitSeconds, CoachException error, boolean serverBusy)
 		{
 			super(null, null, false, false);
 			this.waitSeconds = waitSeconds;
 			this.error = error;
+			this.serverBusy = serverBusy;
 		}
 	}
 
@@ -150,6 +159,11 @@ final class HttpJson
 				if (res.code() == 429)
 				{
 					throw new RateLimited(retryAfterSeconds(res.header("Retry-After"), text), ce);
+				}
+				if (res.code() == 500 || res.code() == 502 || res.code() == 503 || res.code() == 504 || res.code() == 529)
+				{
+					double hinted = retryAfterSeconds(res.header("Retry-After"), null);
+					throw new RateLimited(hinted > 0 ? hinted : 3, ce, true);
 				}
 				throw ce;
 			}

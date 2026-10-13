@@ -140,14 +140,24 @@ public class CoachService
 		}
 	}
 
+	/** AI answers can take much longer than RuneLite's default HTTP timeouts allow. */
+	OkHttpClient aiHttp()
+	{
+		return http.newBuilder()
+			.connectTimeout(15, TimeUnit.SECONDS)
+			.writeTimeout(30, TimeUnit.SECONDS)
+			.readTimeout(120, TimeUnit.SECONDS)
+			.build();
+	}
+
 	AiProvider provider(CoachConfig c, AccountSnapshot snap)
 	{
 		switch (c.provider())
 		{
 			case ANTHROPIC:
-				return new AnthropicProvider(http, gson, c.apiKey());
+				return new AnthropicProvider(aiHttp(), gson, c.apiKey());
 			case OPENAI_COMPATIBLE:
-				return new OpenAiCompatibleProvider(http, gson, c.apiKey(), c.baseUrl());
+				return new OpenAiCompatibleProvider(aiHttp(), gson, c.apiKey(), c.baseUrl());
 			case MOCK:
 			default:
 				return new MockProvider(snap, c.sendQuests(), c.sendSkills());

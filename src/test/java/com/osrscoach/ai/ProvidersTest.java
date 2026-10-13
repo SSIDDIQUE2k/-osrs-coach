@@ -14,12 +14,28 @@ import java.net.UnknownHostException;
 import java.time.Clock;
 import java.time.ZoneOffset;
 import java.util.Collections;
+import org.junit.jupiter.api.AfterEach;
+import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 
 class ProvidersTest
 {
 	private static final Gson GSON = new Gson();
 	private static final String KEY = "sk-ant-TEST-SECRET-123";
+	private HttpJson.Sleeper original;
+
+	@BeforeEach
+	void noRealSleeps()
+	{
+		original = HttpJson.sleeper;
+		HttpJson.sleeper = ms -> { };
+	}
+
+	@AfterEach
+	void restoreSleeper()
+	{
+		HttpJson.sleeper = original;
+	}
 
 	private static CoachRequest req()
 	{
@@ -75,7 +91,8 @@ class ProvidersTest
 		};
 		for (Object[] c : cases)
 		{
-			FakeHttp ai = new FakeHttp().respond((Integer) c[0], "{\"type\":\"error\",\"error\":{\"type\":\"x\",\"message\":\"boom\"}}");
+			String err = "{\"type\":\"error\",\"error\":{\"type\":\"x\",\"message\":\"boom\"}}";
+			FakeHttp ai = new FakeHttp().respond((Integer) c[0], err).respond((Integer) c[0], err).respond((Integer) c[0], err);
 			CoachException e = assertThrows(CoachException.class, () -> new AnthropicProvider(ai.client(), GSON, KEY).respond(req(), new CoachTools(null)));
 			assertEquals(c[1], e.getKind(), "HTTP " + c[0]);
 			assertEquals(c[2], e.isRetryable(), "HTTP " + c[0]);
@@ -208,5 +225,40 @@ class ProvidersTest
 		CoachReply r = new OpenAiCompatibleProvider(ai.client(), GSON, "k", "https://x.test/v1").respond(req(), tools(new FakeHttp()));
 		assertEquals("done", r.getText());
 		assertTrue(ai.bodies.get(1).contains("BAD_ARGUMENTS"));
+	}
+
+	@Test
+	void transientServerErrorIsRetried() throws Exception
+	{
+		FakeHttp ai = new FakeHttp().respond(503, "{\"error\":{\"message\":\"overloaded\"}}")
+			.respond(200, "{\"choices\":[{\"message\":{\"content\":\"ok\"}}]}");
+		java.util.List<String> progress = new java.util.ArrayList<>();
+		CoachRequest r = req().toBuilder().progress(progress::add).build();
+		assertEquals("ok", new OpenAiCompatibleProvider(ai.client(), GSON, "k", "https://x.test/v1").respond(r, new CoachTools(null)).getText());
+		assertTrue(progress.get(0).startsWith("AI service busy"), progress.toString());
+	}
+
+	@Test
+	void openAiNeverSendsToolChoiceNoneAndStopsRunawayLookups() throws Exception
+	{
+		String toolCall = "{\"choices\":[{\"message\":{\"tool_calls\":[{\"id\":\"c\",\"function\":{\"name\":\"wiki_search\",\"arguments\":\"{\\\"query\\\":\\\"x\\\"}\"}}]}}]}";
+		FakeHttp ai = new FakeHttp();
+		for (int i = 0; i <= 3; i++)
+		{
+			ai.respond(200, toolCall);
+		}
+		ai.respond(200, "{\"choices\":[{\"message\":{\"content\":\"final\"}}]}");
+		FakeHttp wiki = new FakeHttp();
+		for (int i = 0; i < 5; i++)
+		{
+			wiki.respond(200, "{\"query\":{\"search\":[]}}");
+		}
+		CoachRequest r = req().toBuilder().compact(true).build();
+		assertEquals("final", new OpenAiCompatibleProvider(ai.client(), GSON, "k", "https://api.groq.com/openai/v1").respond(r, tools(wiki)).getText());
+		for (String b : ai.bodies)
+		{
+			assertFalse(b.contains("tool_choice"), "Groq rejects tool_choice=none");
+		}
+		assertTrue(ai.bodies.get(ai.bodies.size() - 1).contains("LOOKUP_LIMIT"));
 	}
 }

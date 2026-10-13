@@ -83,7 +83,9 @@ public class OpenAiCompatibleProvider implements AiProvider
 		}
 
 		int maxRounds = req.isCompact() ? 3 : MAX_ROUNDS;
-		for (int round = 0; round <= maxRounds; round++)
+		// One extra round: after the lookup budget is spent the model gets "answer now" tool results,
+		// because some providers (e.g. Groq) reject tool_choice=none when the model still calls a tool.
+		for (int round = 0; round <= maxRounds + 1; round++)
 		{
 			JsonObject body = new JsonObject();
 			body.addProperty("model", req.getModel());
@@ -92,10 +94,6 @@ public class OpenAiCompatibleProvider implements AiProvider
 			if (toolDefs.size() > 0)
 			{
 				body.add("tools", toolDefs);
-				if (round == maxRounds)
-				{
-					body.addProperty("tool_choice", "none");
-				}
 			}
 			JsonObject res = HttpJson.post(http, gson, baseUrl + "/chat/completions", headers, body, host(), req.getProgress());
 			JsonObject message;
@@ -116,7 +114,7 @@ public class OpenAiCompatibleProvider implements AiProvider
 			}
 
 			JsonArray calls = message.has("tool_calls") && message.get("tool_calls").isJsonArray() ? message.getAsJsonArray("tool_calls") : null;
-			if (calls != null && calls.size() > 0 && round < maxRounds)
+			if (calls != null && calls.size() > 0 && round <= maxRounds)
 			{
 				messages.add(message);
 				for (JsonElement el : calls)
@@ -137,7 +135,16 @@ public class OpenAiCompatibleProvider implements AiProvider
 					JsonObject r = new JsonObject();
 					r.addProperty("role", "tool");
 					r.addProperty("tool_call_id", call.has("id") ? call.get("id").getAsString() : "");
-					r.addProperty("content", args == null ? "BAD_ARGUMENTS: arguments were not valid JSON" : tools.execute(name, args));
+					String result;
+					if (round == maxRounds)
+					{
+						result = "LOOKUP_LIMIT: no more lookups are allowed for this answer. Answer now with what you have, and say what is unverified.";
+					}
+					else
+					{
+						result = args == null ? "BAD_ARGUMENTS: arguments were not valid JSON" : tools.execute(name, args);
+					}
+					r.addProperty("content", result);
 					messages.add(r);
 				}
 				continue;

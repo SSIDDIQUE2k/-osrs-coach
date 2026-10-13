@@ -260,4 +260,15 @@ class ProvidersTest
 		assertEquals("ok", new OpenAiCompatibleProvider(other.client(), GSON, "k", "https://proxy.test/v1").respond(req(), new CoachTools(null)).getText());
 		assertTrue(other.bodies.get(1).contains("\"max_completion_tokens\""));
 	}
+
+	@Test
+	void outOfCreditIsNotRetryable()
+	{
+		FakeHttp ai = new FakeHttp().respond(402, "{\"error\":\"You have no remaining credits.\"}");
+		CoachException e = org.junit.jupiter.api.Assertions.assertThrows(CoachException.class,
+			() -> new OpenAiCompatibleProvider(ai.client(), GSON, "hf", "https://router.huggingface.co/v1").respond(req(), new CoachTools(null)));
+		assertFalse(e.isRetryable());
+		assertTrue(e.getMessage().contains("out of credit"));
+		assertFalse(e.getMessage().contains("Wait a minute"));
+	}
 }

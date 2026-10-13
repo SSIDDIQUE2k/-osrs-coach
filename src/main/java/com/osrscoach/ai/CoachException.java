@@ -72,7 +72,11 @@ public class CoachException extends Exception
 		{
 			return new CoachException(Kind.BAD_CONFIG, providerName + " refused the request (HTTP " + code + "). Often a wrong model name or a model without tool support." + d, false);
 		}
-		if (code == 402 || code == 429)
+		if (code == 402)
+		{
+			return new CoachException(Kind.RATE_LIMITED, providerName + " says your account is out of credit (HTTP 402). Waiting won't help: add credit in that provider's billing page, or switch Provider/key in settings." + d, false);
+		}
+		if (code == 429)
 		{
 			return new CoachException(Kind.RATE_LIMITED, providerName + " says you're rate limited or out of credit (HTTP " + code + "). Wait a minute or check billing." + d, true);
 		}

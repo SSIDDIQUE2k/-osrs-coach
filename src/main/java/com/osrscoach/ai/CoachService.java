@@ -41,6 +41,11 @@ public class CoachService
 
 	private final List<ChatTurn> history = new ArrayList<>();
 	private volatile MapMarker marker;
+	/** Service key -> time it may be tried again. Avoids hammering services that are rate limited or out of quota. */
+	private final java.util.Map<String, java.time.Instant> cooldowns = new java.util.concurrent.ConcurrentHashMap<>();
+	static final long QUOTA_COOLDOWN_SECONDS = 15 * 60;
+	static final long AUTH_COOLDOWN_SECONDS = 10 * 60;
+	static final long BUSY_COOLDOWN_SECONDS = 30;
 	private volatile AccountSnapshot lastSnapshot;
 
 	public CoachService(Supplier<CompletableFuture<AccountSnapshot>> snapshotSource, Supplier<CoachConfig> config,
@@ -108,7 +113,26 @@ public class CoachService
 					}
 					else
 					{
-						result.completeExceptionally(e);
+						CoachReply fallback = null;
+						try
+						{
+							if (config.get().wikiLookups())
+							{
+								fallback = wikiFallback(question, e);
+							}
+						}
+						catch (Exception ignored)
+						{
+							// Wiki unreachable too: report the original problem.
+						}
+						if (fallback != null)
+						{
+							result.complete(fallback);
+						}
+						else
+						{
+							result.completeExceptionally(e);
+						}
 					}
 				}
 				catch (RuntimeException e)
@@ -140,6 +164,91 @@ public class CoachService
 		return askBlocking(question, null);
 	}
 
+	private void coolDown(Target t, CoachException e)
+	{
+		long secs;
+		switch (e.getKind())
+		{
+			case RATE_LIMITED:
+				secs = e.getRetryAfterSeconds() >= 0 ? (long) Math.ceil(e.getRetryAfterSeconds()) : QUOTA_COOLDOWN_SECONDS;
+				break;
+			case AUTH:
+				secs = AUTH_COOLDOWN_SECONDS;
+				break;
+			case SERVER:
+				secs = BUSY_COOLDOWN_SECONDS;
+				break;
+			default:
+				return;
+		}
+		cooldowns.put(t.key(), clock.instant().plusSeconds(secs));
+	}
+
+	/** Called when settings change, so a fixed key or new provider is tried right away. */
+	public void resetCooldowns()
+	{
+		cooldowns.clear();
+	}
+
+	/** Search terms from a natural question: drops filler words the wiki search handles badly. */
+	static String wikiQuery(String question)
+	{
+		java.util.Set<String> stop = new java.util.HashSet<>(java.util.Arrays.asList(
+			"where", "what", "whats", "how", "who", "when", "why", "which", "do", "does", "did", "i", "im", "me", "my", "to", "go",
+			"for", "the", "a", "an", "is", "are", "can", "should", "find", "get", "in", "of", "on", "at", "it", "and", "or",
+			"next", "please", "tell", "you", "your", "with", "about", "this", "that", "there", "need", "want"));
+		StringBuilder b = new StringBuilder();
+		for (String w : question.toLowerCase(java.util.Locale.ROOT).replaceAll("[^a-z0-9' ]", " ").split("\\s+"))
+		{
+			if (!w.isEmpty() && !stop.contains(w))
+			{
+				b.append(b.length() == 0 ? "" : " ").append(w);
+			}
+		}
+		return b.length() == 0 ? question : b.toString();
+	}
+
+	/**
+	 * When every AI service is unavailable, still give the player something useful: top OSRS Wiki matches for
+	 * their question, clearly labelled as not AI.
+	 */
+	CoachReply wikiFallback(String question, CoachException cause) throws com.osrscoach.research.LookupException
+	{
+		com.osrscoach.research.LookupResult r = wiki.search(wikiQuery(question));
+		if (r.getSources().isEmpty())
+		{
+			return null;
+		}
+		StringBuilder t = new StringBuilder("**AI is unavailable right now** (" + cause.getKind().getTitle().toLowerCase(java.util.Locale.ROOT)
+			+ "), so here are the best OSRS Wiki matches for your question:\n\n");
+		java.util.regex.Matcher m = java.util.regex.Pattern.compile("(?m)^- (.+?) <(https?://[^>]+)>: ?(.*)$").matcher(r.getText());
+		int n = 0;
+		while (m.find() && n++ < 4)
+		{
+			String snippet = m.group(3).trim();
+			t.append("• [").append(m.group(1)).append("](").append(m.group(2)).append(")");
+			if (!snippet.isEmpty())
+			{
+				t.append(" — ").append(snippet.length() > 160 ? snippet.substring(0, 157) + "…" : snippet);
+			}
+			t.append('\n');
+		}
+		t.append("\nAsk again in a bit for a personalised answer.");
+		List<String> warnings = new ArrayList<>();
+		warnings.add("No AI answer: " + firstLine(cause.getMessage()));
+		return new CoachReply(t.toString(), r.getSources(), warnings, false, "Wiki results — no AI", java.util.Collections.emptyList());
+	}
+
+	private static String firstLine(String s)
+	{
+		if (s == null)
+		{
+			return "";
+		}
+		String one = s.split("\n")[0];
+		return one.length() > 200 ? one.substring(0, 197) + "…" : one;
+	}
+
 	/** One AI service to try, in order: main provider, then configured backups. */
 	static final class Target
 	{
@@ -156,6 +265,11 @@ public class CoachService
 			this.model = model == null ? "" : model.trim();
 			this.compact = compact;
 			this.mock = mock;
+		}
+
+		String key()
+		{
+			return name.replaceFirst("^[^(]*", "") + "|" + model;
 		}
 	}
 
@@ -208,7 +322,7 @@ public class CoachService
 			throw new CoachException(CoachException.Kind.BAD_CONFIG, "Set a model name in the plugin settings.", false);
 		}
 		CoachRequest req = CoachRequest.builder()
-			.systemPrompt(CoachPrompt.system(context, tools.wikiEnabled(), tools.webEnabled()))
+			.systemPrompt(CoachPrompt.system(context, tools.wikiEnabled(), tools.webEnabled(), c.stepByStep()))
 			.history(trimmedHistory(t.compact ? Math.min(2, c.historyTurns()) : c.historyTurns()))
 			.userMessage(question)
 			.model(t.model)
@@ -232,9 +346,38 @@ public class CoachService
 		CoachConfig c = config.get();
 		AccountSnapshot snap = readSnapshot();
 		String context = contextText(snap, c);
+		String skippedNote = null;
 
-		List<Target> targets = targets(c, snap);
+		List<Target> targets = new ArrayList<>();
+		List<Target> cooling = new ArrayList<>();
+		java.time.Instant now = clock.instant();
+		for (Target t : targets(c, snap))
+		{
+			java.time.Instant until = cooldowns.get(t.key());
+			if (until != null && until.isAfter(now))
+			{
+				cooling.add(t);
+			}
+			else
+			{
+				targets.add(t);
+			}
+		}
+		if (targets.isEmpty())
+		{
+			// Everything is cooling down: try the one that frees up soonest.
+			cooling.sort(java.util.Comparator.comparing(t -> cooldowns.get(t.key())));
+			targets.addAll(cooling);
+		}
+		else if (!cooling.isEmpty() && cooling.get(0).name.startsWith("Main"))
+		{
+			skippedNote = cooling.get(0).name + " is cooling down after a limit — used " + targets.get(0).name + ".";
+		}
 		List<String> fallbackNotes = new ArrayList<>();
+		if (skippedNote != null)
+		{
+			fallbackNotes.add(skippedNote);
+		}
 		List<String> tried = new ArrayList<>();
 		double shortestWait = -1;
 		boolean shortestWaitBusy = false;
@@ -249,6 +392,7 @@ public class CoachService
 			}
 			catch (CoachException e)
 			{
+				coolDown(t, e);
 				boolean last = i == targets.size() - 1;
 				if (last)
 				{

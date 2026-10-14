@@ -106,8 +106,8 @@ public class CoachTools
 	public CoachTools compact()
 	{
 		maxCalls = 3;
-		wikiPageChars = 3000;
-		webPageChars = 2500;
+		wikiPageChars = 2500;
+		webPageChars = 2000;
 		return this;
 	}
 

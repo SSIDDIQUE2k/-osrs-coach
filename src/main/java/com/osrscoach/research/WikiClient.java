@@ -123,7 +123,7 @@ public class WikiClient
 			throw new LookupException("Wiki page response had no content");
 		}
 		String realTitle = parse.get("title").getAsString();
-		String text = parse.get("wikitext").getAsString();
+		String text = cleanWikitext(parse.get("wikitext").getAsString());
 		boolean truncated = text.length() > maxChars;
 		if (truncated)
 		{
@@ -132,6 +132,36 @@ public class WikiClient
 		String link = pageUrl(realTitle);
 		return new LookupResult("Page: " + realTitle + " <" + link + ">\n" + text + (truncated ? "\n[...page truncated...]" : ""),
 			Collections.singletonList(new Source(realTitle, link, null)));
+	}
+
+	private static final Pattern[] NOISE = {
+		Pattern.compile("(?s)<!--.*?-->"),
+		Pattern.compile("(?s)<ref[^>/]*>.*?</ref>"),
+		Pattern.compile("<ref[^>]*/>"),
+		Pattern.compile("(?s)<gallery[^>]*>.*?</gallery>"),
+		Pattern.compile("(?s)<poem>.*?</poem>"),
+		Pattern.compile("\\[\\[(?:File|Image):[^\\[\\]]*(?:\\[\\[[^\\]]*\\]\\][^\\[\\]]*)*\\]\\]"),
+		Pattern.compile("\\{\\{(?:External|Has quick guide|Otheruses|Redirect|Relativeloc|Has calculator|Members|Free-to-play)[^{}]*\\}\\}"),
+		Pattern.compile("(?m)^\\|\\s*(?:image|update|release|developer|leagueRegion|series|number|aka)\\s*=.*$"),
+		Pattern.compile("(?m)^\\[\\[Category:.*$"),
+	};
+	private static final Pattern PIPED_LINK = Pattern.compile("\\[\\[[^\\[\\]|]*\\|([^\\[\\]]*)\\]\\]");
+	private static final Pattern PLAIN_LINK = Pattern.compile("\\[\\[([^\\[\\]|]*)\\]\\]");
+	private static final Pattern MANY_BLANK = Pattern.compile("\\n{3,}");
+
+	/** Drops references, images, comments and housekeeping lines; keeps text, templates and map coordinates. */
+	static String cleanWikitext(String t)
+	{
+		String s = t;
+		for (Pattern p : NOISE)
+		{
+			s = p.matcher(s).replaceAll("");
+		}
+		s = PIPED_LINK.matcher(s).replaceAll("$1");
+		s = PLAIN_LINK.matcher(s).replaceAll("$1");
+		s = s.replace("'''", "").replace("''", "");
+		s = MANY_BLANK.matcher(s).replaceAll("\n\n");
+		return s.trim();
 	}
 
 	public LookupResult price(String itemName) throws LookupException

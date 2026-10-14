@@ -295,6 +295,11 @@ public class CoachPlugin extends Plugin
 		if (CoachConfig.GROUP.equals(e.getGroup()) && panel != null)
 		{
 			panel.updateProviderLabel();
+			panel.applyTextSize();
+			if (service != null)
+			{
+				service.resetCooldowns();
+			}
 		}
 	}
 

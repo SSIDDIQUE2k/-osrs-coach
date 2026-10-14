@@ -76,7 +76,7 @@ public class CoachPanel extends PluginPanel
 	private final JButton retry = new JButton("Retry");
 	private final JTextArea input = new JTextArea(3, 10);
 	private final JButton send = new JButton("Ask");
-	private final JPanel quick = new JPanel(new GridLayout(2, 2, 4, 4));
+	private final JPanel quick = new JPanel(new GridLayout(3, 2, 4, 4));
 	private final GridBagConstraints row = new GridBagConstraints();
 
 	private String lastQuestion;
@@ -158,6 +158,8 @@ public class CoachPanel extends PluginPanel
 		quick.add(small("Train a skill", "Pick a skill", this::pickSkill));
 		quick.add(small("Quest help", "Pick a quest", this::pickQuest));
 		quick.add(small("Gear advice", "Upgrade within your budget", () -> ask("What gear upgrade should I work toward next for my account and budget?")));
+		quick.add(small("Done → next step", "I finished that; give me the next step", () -> ask("I did that. What's the next step?")));
+		quick.add(small("Explain more", "More detail on the last answer", () -> ask("Explain the last answer in more detail, like I'm new.")));
 		top.add(left(quick));
 		add(top, BorderLayout.NORTH);
 
@@ -190,6 +192,7 @@ public class CoachPanel extends PluginPanel
 		bottom.add(statusRow, BorderLayout.NORTH);
 
 		input.setLineWrap(true);
+		input.setFont(chatFont());
 		input.setWrapStyleWord(true);
 		input.setBorder(new EmptyBorder(4, 4, 4, 4));
 		input.setToolTipText("Enter to ask, Shift+Enter for a new line");
@@ -374,7 +377,8 @@ public class CoachPanel extends PluginPanel
 		{
 			html.append("<br><span style='color:#e06060'>⚠ ").append(Markdown.escape(w)).append("</span>");
 		}
-		String footer = r.isLive() ? r.getProviderLabel() : "MOCK — not AI output";
+		boolean wikiOnly = !r.isLive() && r.getProviderLabel() != null && r.getProviderLabel().startsWith("Wiki");
+		String footer = r.isLive() ? r.getProviderLabel() : wikiOnly ? r.getProviderLabel() : "MOCK — not AI output";
 		addBubble(html.toString(), COACH_BG, footer, false);
 		if (!r.isLive())
 		{
@@ -527,7 +531,7 @@ public class CoachPanel extends PluginPanel
 		pane.setOpaque(true);
 		pane.setBackground(bg);
 		pane.putClientProperty(JEditorPane.HONOR_DISPLAY_PROPERTIES, Boolean.TRUE);
-		pane.setFont(FontManager.getRunescapeSmallFont().deriveFont(14f));
+		pane.setFont(chatFont());
 		pane.setForeground(user ? Color.WHITE : ColorScheme.TEXT_COLOR);
 		pane.setBorder(new EmptyBorder(6, 8, 6, 8));
 		pane.setText("<html><body style='margin:0'>" + (user ? "<span style='color:#9a9a9a'>You</span><br>" : "") + html + "</body></html>");
@@ -552,6 +556,30 @@ public class CoachPanel extends PluginPanel
 		chat.revalidate();
 		chat.repaint();
 		SwingUtilities.invokeLater(() -> chatScroll.getVerticalScrollBar().setValue(chatScroll.getVerticalScrollBar().getMaximum()));
+	}
+
+	private java.awt.Font chatFont()
+	{
+		return FontManager.getRunescapeSmallFont().deriveFont((float) config.get().textSize().points);
+	}
+
+	/** Any thread. Re-applies the chat text size to existing and future messages. */
+	public void applyTextSize()
+	{
+		SwingUtilities.invokeLater(() ->
+		{
+			java.awt.Font f = chatFont();
+			for (Component comp : chat.getComponents())
+			{
+				if (comp instanceof JEditorPane)
+				{
+					comp.setFont(f);
+				}
+			}
+			input.setFont(f);
+			chat.revalidate();
+			chat.repaint();
+		});
 	}
 
 	private void setBusy(boolean b)

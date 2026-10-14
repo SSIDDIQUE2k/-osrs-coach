@@ -25,6 +25,21 @@ public interface CoachConfig extends Config
 		BRAVE
 	}
 
+	enum TextSize
+	{
+		SMALL(13),
+		MEDIUM(16),
+		LARGE(19),
+		HUGE(23);
+
+		public final int points;
+
+		TextSize(int points)
+		{
+			this.points = points;
+		}
+	}
+
 	enum Membership
 	{
 		AUTO_DETECT,
@@ -213,6 +228,21 @@ public interface CoachConfig extends Config
 	}
 
 	// ---------------- behaviour ----------------
+
+	@ConfigItem(keyName = "stepByStep", name = "Step-by-step answers",
+		description = "Answer as short numbered in-game steps; press 'Done → next step' to continue",
+		section = behaviourSection, position = -2)
+	default boolean stepByStep()
+	{
+		return true;
+	}
+
+	@ConfigItem(keyName = "textSize", name = "Chat text size", description = "Size of the coach's chat text",
+		section = behaviourSection, position = -1)
+	default TextSize textSize()
+	{
+		return TextSize.LARGE;
+	}
 
 	@ConfigItem(keyName = "wikiLookups", name = "Allow wiki & price lookups",
 		description = "Lets the coach search the OSRS Wiki and read real-time prices from prices.runescape.wiki",

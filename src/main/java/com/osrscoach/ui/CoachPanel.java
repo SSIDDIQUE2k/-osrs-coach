@@ -404,7 +404,7 @@ public class CoachPanel extends PluginPanel
 		}
 		status.setForeground(ERROR_COLOR);
 		status.setText(wrap("<b>" + Markdown.escape(title) + "</b>"));
-		addBubble("<span style='color:#e06060'><b>" + Markdown.escape(title) + ":</b> " + Markdown.escape(msg) + "</span>", COACH_BG, null, false);
+		addBubble("<span style='color:#e06060'><b>" + Markdown.escape(title) + ":</b> " + Markdown.escape(msg).replace("\n", "<br>") + "</span>", COACH_BG, null, false);
 		retry.setVisible(retryable);
 	}
 

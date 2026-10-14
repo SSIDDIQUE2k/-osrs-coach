@@ -235,6 +235,7 @@ public class CoachService
 
 		List<Target> targets = targets(c, snap);
 		List<String> fallbackNotes = new ArrayList<>();
+		List<String> tried = new ArrayList<>();
 		CoachReply reply = null;
 		for (int i = 0; i < targets.size(); i++)
 		{
@@ -249,8 +250,21 @@ public class CoachService
 				boolean last = i == targets.size() - 1;
 				if (last)
 				{
-					throw e;
+					if (tried.isEmpty())
+					{
+						throw e;
+					}
+					// Everything failed: show each service's reason, not just the last one.
+					StringBuilder all = new StringBuilder("All AI services failed.");
+					for (String r : tried)
+					{
+						all.append("\n• ").append(r);
+					}
+					all.append("\n• ").append(t.name).append(": ").append(e.getMessage());
+					CoachException combined = new CoachException(e.getKind(), all.toString(), e.isRetryable());
+					throw combined.withRetryAfter(e.getRetryAfterSeconds(), e.isServerBusy());
 				}
+				tried.add(t.name + ": " + e.getMessage());
 				fallbackNotes.add(t.name + " failed (" + e.getKind().getTitle() + ") — answered by " + targets.get(i + 1).name + " instead.");
 				if (progress != null)
 				{

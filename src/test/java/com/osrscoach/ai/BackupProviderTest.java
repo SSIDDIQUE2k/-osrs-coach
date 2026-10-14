@@ -80,6 +80,10 @@ class BackupProviderTest
 			.respond(401, "{\"error\":{\"message\":\"bad key\"}}");
 		ExecutionException e = assertThrows(ExecutionException.class, () -> service(ai, true).ask("q", null).get(5, TimeUnit.SECONDS));
 		assertEquals(CoachException.Kind.AUTH, ((CoachException) e.getCause()).getKind());
+		String msg = e.getCause().getMessage();
+		assertTrue(msg.startsWith("All AI services failed."), msg);
+		assertTrue(msg.contains("Main provider (router.huggingface.co)") && msg.contains("out of credit"), msg);
+		assertTrue(msg.contains("Backup 1 (generativelanguage.googleapis.com)") && msg.contains("bad key"), msg);
 	}
 
 	@Test

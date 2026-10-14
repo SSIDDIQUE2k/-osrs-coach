@@ -236,6 +236,8 @@ public class CoachService
 		List<Target> targets = targets(c, snap);
 		List<String> fallbackNotes = new ArrayList<>();
 		List<String> tried = new ArrayList<>();
+		double shortestWait = -1;
+		boolean shortestWaitBusy = false;
 		CoachReply reply = null;
 		for (int i = 0; i < targets.size(); i++)
 		{
@@ -261,10 +263,24 @@ public class CoachService
 						all.append("\n• ").append(r);
 					}
 					all.append("\n• ").append(t.name).append(": ").append(e.getMessage());
-					CoachException combined = new CoachException(e.getKind(), all.toString(), e.isRetryable());
-					throw combined.withRetryAfter(e.getRetryAfterSeconds(), e.isServerBusy());
+					// Retry the whole chain after the shortest server-suggested wait any service gave
+					// (e.g. Groq's "try again in 3.4s"), even if the last service had no hint.
+					double wait = shortestWait;
+					boolean busy = shortestWaitBusy;
+					if (e.isRetryable() && e.getRetryAfterSeconds() >= 0 && (wait < 0 || e.getRetryAfterSeconds() < wait))
+					{
+						wait = e.getRetryAfterSeconds();
+						busy = e.isServerBusy();
+					}
+					CoachException combined = new CoachException(e.getKind(), all.toString(), wait >= 0 || e.isRetryable());
+					throw combined.withRetryAfter(wait, busy);
 				}
 				tried.add(t.name + ": " + e.getMessage());
+				if (e.isRetryable() && e.getRetryAfterSeconds() >= 0 && (shortestWait < 0 || e.getRetryAfterSeconds() < shortestWait))
+				{
+					shortestWait = e.getRetryAfterSeconds();
+					shortestWaitBusy = e.isServerBusy();
+				}
 				fallbackNotes.add(t.name + " failed (" + e.getKind().getTitle() + ") — answered by " + targets.get(i + 1).name + " instead.");
 				if (progress != null)
 				{

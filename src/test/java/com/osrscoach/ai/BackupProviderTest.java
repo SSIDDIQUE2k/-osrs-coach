@@ -100,4 +100,18 @@ class BackupProviderTest
 		assertEquals("api.groq.com", CoachService.hostOf("https://api.groq.com/openai/v1"));
 		assertEquals("localhost:1234", CoachService.hostOf("http://localhost:1234/v1"));
 	}
+
+	@Test
+	void shortWaitOnMainIsRetriedEvenIfBackupsFailWithoutHint() throws Exception
+	{
+		FakeHttp ai = new FakeHttp()
+			.respond(429, "{\"error\":{\"message\":\"Rate limit reached. Please try again in 3.4125s.\"}}")
+			.respond(429, "{\"error\":{\"message\":\"You exceeded your current quota\"}}")
+			.respond(200, "{\"choices\":[{\"message\":{\"content\":\"main again\"}}]}");
+		List<String> progress = new CopyOnWriteArrayList<>();
+		CoachReply r = service(ai, true).ask("q", progress::add).get(5, TimeUnit.SECONDS);
+		assertEquals("main again", r.getText());
+		assertEquals("router.huggingface.co", ai.requests.get(2).url().host());
+		assertTrue(progress.stream().anyMatch(p -> p.contains("waiting 4s")), progress.toString());
+	}
 }

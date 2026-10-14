@@ -135,7 +135,13 @@ final class HttpJson
 	{
 		try
 		{
-			JsonObject o = gson.fromJson(body, JsonObject.class);
+			JsonElement root = gson.fromJson(body, JsonElement.class);
+			// Gemini's OpenAI-compatible endpoint wraps errors in a list: [{"error":{...}}]
+			if (root != null && root.isJsonArray() && root.getAsJsonArray().size() > 0)
+			{
+				root = root.getAsJsonArray().get(0);
+			}
+			JsonObject o = root != null && root.isJsonObject() ? root.getAsJsonObject() : null;
 			if (o != null && o.has("error"))
 			{
 				JsonElement e = o.get("error");

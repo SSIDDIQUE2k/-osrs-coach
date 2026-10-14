@@ -271,4 +271,13 @@ class ProvidersTest
 		assertTrue(e.getMessage().contains("out of credit"));
 		assertFalse(e.getMessage().contains("Wait a minute"));
 	}
+
+	@Test
+	void geminiListShapedErrorDetailIsShown()
+	{
+		FakeHttp ai = new FakeHttp().respond(400, "[{\"error\":{\"code\":400,\"message\":\"Invalid JSON payload received. Unknown name \\\"foo\\\"\",\"status\":\"INVALID_ARGUMENT\"}}]");
+		CoachException e = org.junit.jupiter.api.Assertions.assertThrows(CoachException.class,
+			() -> new OpenAiCompatibleProvider(ai.client(), GSON, "AIza", "https://generativelanguage.googleapis.com/v1beta/openai/").respond(req(), new CoachTools(null)));
+		assertTrue(e.getMessage().contains("Invalid JSON payload received"), e.getMessage());
+	}
 }

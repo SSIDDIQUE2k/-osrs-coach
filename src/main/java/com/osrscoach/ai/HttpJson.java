@@ -72,19 +72,21 @@ final class HttpJson
 	static JsonObject postOnce(OkHttpClient http, Gson gson, String url, Map<String, String> headers, JsonObject body, String providerName)
 		throws CoachException
 	{
-		Request.Builder rb = new Request.Builder().url(url).post(RequestBody.create(JSON, gson.toJson(body)));
-		for (Map.Entry<String, String> h : headers.entrySet())
-		{
-			rb.header(h.getKey(), h.getValue());
-		}
 		Request req;
 		try
 		{
+			Request.Builder rb = new Request.Builder().url(url).post(RequestBody.create(JSON, gson.toJson(body)));
+			for (Map.Entry<String, String> h : headers.entrySet())
+			{
+				rb.header(h.getKey(), h.getValue());
+			}
 			req = rb.build();
 		}
 		catch (IllegalArgumentException e)
 		{
-			throw new CoachException(CoachException.Kind.BAD_CONFIG, "The provider URL or a header is invalid. Check the Base URL setting.", false, e);
+			// Deliberately no cause/message: OkHttp's message echoes the header value, i.e. the API key.
+			throw new CoachException(CoachException.Kind.BAD_CONFIG, "The API key or Base URL for " + providerName
+				+ " contains a character that can't be sent. Delete it in settings and paste it again.", false);
 		}
 		try (Response res = http.newCall(req).execute())
 		{

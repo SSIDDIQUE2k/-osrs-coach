@@ -27,7 +27,7 @@ public class OpenAiCompatibleProvider implements AiProvider
 		this.http = http;
 		this.gson = gson;
 		this.apiKey = apiKey;
-		this.baseUrl = baseUrl == null ? "" : baseUrl.trim().replaceAll("/+$", "");
+		this.baseUrl = Secrets.cleanUrl(baseUrl);
 	}
 
 	@Override
@@ -51,14 +51,15 @@ public class OpenAiCompatibleProvider implements AiProvider
 			throw new CoachException(CoachException.Kind.BAD_CONFIG, "Set 'Base URL' to something like https://api.openai.com/v1 or http://localhost:11434/v1", false);
 		}
 		boolean local = baseUrl.contains("://localhost") || baseUrl.contains("://127.0.0.1");
-		if ((apiKey == null || apiKey.trim().isEmpty()) && !local)
+		String key = Secrets.cleanKey(apiKey);
+		if (key.isEmpty() && !local)
 		{
 			throw new CoachException(CoachException.Kind.NO_CREDENTIALS, "Add an API key for " + host() + " in the plugin settings, or switch Provider to MOCK.", false);
 		}
 		Map<String, String> headers = new LinkedHashMap<>();
-		if (apiKey != null && !apiKey.trim().isEmpty())
+		if (!key.isEmpty())
 		{
-			headers.put("Authorization", "Bearer " + apiKey.trim());
+			headers.put("Authorization", "Bearer " + key);
 		}
 
 		JsonArray messages = new JsonArray();

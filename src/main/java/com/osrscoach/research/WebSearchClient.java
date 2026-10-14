@@ -65,7 +65,7 @@ public class WebSearchClient
 		this.http = http;
 		this.gson = gson;
 		this.backend = backend;
-		this.apiKey = apiKey == null ? "" : apiKey.trim();
+		this.apiKey = com.osrscoach.ai.Secrets.cleanKey(apiKey);
 		this.serperUrl = serperUrl;
 		this.braveUrl = braveUrl;
 	}

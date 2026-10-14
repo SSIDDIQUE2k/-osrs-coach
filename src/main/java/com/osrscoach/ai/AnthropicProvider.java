@@ -41,12 +41,13 @@ public class AnthropicProvider implements AiProvider
 	@Override
 	public CoachReply respond(CoachRequest req, CoachTools tools) throws CoachException
 	{
-		if (apiKey == null || apiKey.trim().isEmpty())
+		String key = Secrets.cleanKey(apiKey);
+		if (key.isEmpty())
 		{
 			throw new CoachException(CoachException.Kind.NO_CREDENTIALS, "Add your Anthropic API key in the plugin settings, or switch Provider to MOCK.", false);
 		}
 		Map<String, String> headers = new LinkedHashMap<>();
-		headers.put("x-api-key", apiKey.trim());
+		headers.put("x-api-key", key);
 		headers.put("anthropic-version", "2023-06-01");
 
 		JsonArray messages = new JsonArray();

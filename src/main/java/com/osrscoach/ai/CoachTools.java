@@ -234,9 +234,15 @@ public class CoachTools
 			failures.add(e.getMessage());
 			return "LOOKUP_FAILED: " + e.getMessage() + ". Tell the player this could not be verified right now.";
 		}
-		catch (IllegalArgumentException e)
+		catch (BadArgs e)
 		{
 			return "BAD_ARGUMENTS: " + e.getMessage();
+		}
+		catch (IllegalArgumentException e)
+		{
+			// Never forward library messages: they can contain request headers (API keys).
+			failures.add("A lookup request couldn't be built; check the web search key in settings.");
+			return "LOOKUP_FAILED: the request couldn't be built. Tell the player this could not be verified right now.";
 		}
 	}
 
@@ -296,16 +302,25 @@ public class CoachTools
 		return new ArrayList<>(failures);
 	}
 
+	/** Argument problems the model can fix; safe to echo back. */
+	private static final class BadArgs extends IllegalArgumentException
+	{
+		BadArgs(String m)
+		{
+			super(m);
+		}
+	}
+
 	private static String str(JsonObject o, String k)
 	{
 		if (o == null || !o.has(k) || o.get(k).isJsonNull())
 		{
-			throw new IllegalArgumentException("missing '" + k + "'");
+			throw new BadArgs("missing '" + k + "'");
 		}
 		String v = o.get(k).getAsString().trim();
 		if (v.isEmpty() || v.length() > 600)
 		{
-			throw new IllegalArgumentException("'" + k + "' must be 1-600 characters");
+			throw new BadArgs("'" + k + "' must be 1-600 characters");
 		}
 		return v;
 	}

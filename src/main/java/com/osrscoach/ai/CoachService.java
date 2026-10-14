@@ -113,7 +113,12 @@ public class CoachService
 				}
 				catch (RuntimeException e)
 				{
-					result.completeExceptionally(e);
+					// Log only the type and stack (messages from HTTP libraries can echo secrets).
+					log.warn("Coach request failed: {} at {}", e.getClass().getName(),
+						e.getStackTrace().length > 0 ? e.getStackTrace()[0] : "?");
+					result.completeExceptionally(new CoachException(CoachException.Kind.BAD_CONFIG,
+						"Something in your settings couldn't be used (" + e.getClass().getSimpleName()
+							+ "). Re-paste your API keys and Base URLs, then try again.", true));
 				}
 			});
 		}
